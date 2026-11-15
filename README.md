@@ -40,14 +40,17 @@ English | [简体中文](README.zh-CN.md)
 
 ## Screenshots
 
-### Explore — 3D Cinema & Director Search Dock
-![CineVec Explore 3D Cinema](docs/images/explore-cinema.png)
+### Semantic Search — 3D Cinema (`"forest"`)
+![CineVec Semantic Search 3D Cinema](docs/images/search-3d-forest.png)
+
+### Semantic Search — Film Grid (`"dog"`)
+![CineVec Semantic Search Film Grid](docs/images/search-grid-dog.png)
 
 ### Activity — Hardware Telemetry & 4-Stage Pipeline Topology
 ![CineVec Activity Dashboard](docs/images/activity-pipeline.png)
 
 ### Library — Asset Catalog & Metadata Inspector
-![CineVec Library](docs/images/library-grid.png)
+![CineVec Library](docs/images/library-catalog.png)
 
 ---
 
