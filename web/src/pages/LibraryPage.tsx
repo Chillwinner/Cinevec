@@ -12,6 +12,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
+import { useI18n, type Lang } from "../i18n";
 import PreviewLightbox, { type PreviewTarget } from "../components/PreviewLightbox";
 import { AnimatedNumber, Banner, Empty, PageHead, Pill, Portal, Segmented } from "../components/ui";
 import { EASE, softSpring, spring } from "../motion";
@@ -23,15 +24,16 @@ function titleOf(asset: Asset) {
   return asset.display_name || asset.object_key.split("/").pop() || asset.object_key;
 }
 
-function originLabel(asset: Asset) {
-  if (asset.origin === "hosted") return "电脑上传托管";
-  if (asset.source_url) return "外部网址引用";
-  return "网盘引用";
+function originLabel(asset: Asset, lang: Lang) {
+  if (asset.origin === "hosted") return lang === "en" ? "Hosted upload" : "电脑上传托管";
+  if (asset.source_url) return lang === "en" ? "External URL" : "外部网址引用";
+  return lang === "en" ? "Bucket reference" : "网盘引用";
 }
 
 const PAGE = 48;
 
 export default function LibraryPage() {
+  const { lang, t } = useI18n();
   const [params, setParams] = useSearchParams();
   const selectedId = params.get("id");
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -75,7 +77,7 @@ export default function LibraryPage() {
       setSources(sourceData.items);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "资料库读不出来");
+      setError(err instanceof Error ? err.message : t("Failed to load library", "资料库读不出来"));
     } finally {
       setLoading(false);
     }
@@ -137,17 +139,17 @@ export default function LibraryPage() {
     try {
       if (kind === "exclude") {
         await api.excludeAsset(id);
-        setNotice("已排除。会先删向量，成功后再清预览和平台上的原片。网盘里的原文件不会动。");
+        setNotice(t("Excluded. Vectors will be purged first, then previews and hosted originals. Bucket originals are untouched.", "已排除。会先删向量，成功后再清预览和平台上的原片。网盘里的原文件不会动。"));
       } else if (kind === "restore") {
         await api.restoreAsset(id);
-        setNotice("已恢复。");
+        setNotice(t("Restored.", "已恢复。"));
       } else {
         await api.enqueueVectorize(id);
-        setNotice("已加入检索队列。进度在「仪表盘」。");
+        setNotice(t("Queued for indexing. Track progress in Activity.", "已加入检索队列。进度在「仪表盘」。"));
       }
       await load(0, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "操作失败");
+      setError(err instanceof Error ? err.message : t("Action failed", "操作失败"));
     } finally {
       setBusy(false);
     }
@@ -159,11 +161,17 @@ export default function LibraryPage() {
     setBusy(true);
     try {
       await api.batchAssets(selectedIds, action, action === "tag" ? batchTag.trim() : undefined);
-      setNotice(action === "tag" ? "已打上标签。" : action === "exclude" ? "已排除所选，正在删向量并清理平台文件。" : "已加入检索队列。");
+      setNotice(
+        action === "tag"
+          ? t("Tag applied.", "已打上标签。")
+          : action === "exclude"
+            ? t("Selected items excluded. Purging vectors and platform artifacts.", "已排除所选，正在删向量并清理平台文件。")
+            : t("Queued for indexing.", "已加入检索队列。"),
+      );
       setSelectedIds([]);
       await load(0, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "批量操作失败");
+      setError(err instanceof Error ? err.message : t("Batch action failed", "批量操作失败"));
     } finally {
       setBusy(false);
     }
@@ -178,7 +186,7 @@ export default function LibraryPage() {
       setTag("");
       await load(offset, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "标签没加上");
+      setError(err instanceof Error ? err.message : t("Failed to add tag", "标签没加上"));
     } finally {
       setBusy(false);
     }
@@ -190,10 +198,10 @@ export default function LibraryPage() {
     setNotice(null);
     try {
       await api.updateAsset(selected.id, { description: descDraft });
-      setNotice("描述已保存。");
+      setNotice(t("Description saved.", "描述已保存。"));
       await load(offset, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "描述保存失败");
+      setError(err instanceof Error ? err.message : t("Failed to save description", "描述保存失败"));
     } finally {
       setBusy(false);
     }
@@ -207,10 +215,10 @@ export default function LibraryPage() {
     setNotice(null);
     try {
       await api.uploadCover(selected.id, file);
-      setNotice("封面已更新。");
+      setNotice(t("Cover updated.", "封面已更新。"));
       await load(offset, false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "封面更新失败");
+      setError(err instanceof Error ? err.message : t("Failed to update cover", "封面更新失败"));
     } finally {
       setBusy(false);
     }
@@ -221,11 +229,11 @@ export default function LibraryPage() {
     setBusy(true);
     try {
       await api.associateSubtitle(selected.id, subtitleId);
-      setNotice("已绑定字幕。解析进度在「仪表盘」。");
+      setNotice(t("Subtitle linked. Track parsing in Activity.", "已绑定字幕。解析进度在「仪表盘」。"));
       const data = await api.associations(selected.id);
       setAssocs(data.items);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "字幕没绑上");
+      setError(err instanceof Error ? err.message : t("Failed to link subtitle", "字幕没绑上"));
     } finally {
       setBusy(false);
     }
@@ -239,12 +247,12 @@ export default function LibraryPage() {
     <div>
       <PageHead
         eyebrow="LIBRARY"
-        title="资料库"
-        desc="浏览已经登记的照片和视频。排除会先删向量，再清预览和平台托管原片；网盘原文件不会删。"
+        title={t("Library", "资料库")}
+        desc={t("Browse cataloged photos and videos. Excluding deletes vectors first, then previews and hosted originals; external bucket files are untouched.", "浏览已经登记的照片和视频。排除会先删向量，再清预览和平台托管原片；网盘原文件不会删。")}
         actions={
           <div className="stat-block">
             <strong>{total > 0 ? <AnimatedNumber value={total} /> : "0"}</strong>
-            <span>件已登记</span>
+            <span>{t("cataloged", "件已登记")}</span>
           </div>
         }
       />
@@ -252,12 +260,12 @@ export default function LibraryPage() {
       <AnimatePresence>
         {error ? (
           <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <Banner kind="danger" title="没做成">{error}</Banner>
+            <Banner kind="danger" title={t("Action failed", "没做成")}>{error}</Banner>
           </motion.div>
         ) : null}
         {notice ? (
           <motion.div key="notice" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <Banner kind="info" title="好了">{notice}</Banner>
+            <Banner kind="info" title={t("Done", "好了")}>{notice}</Banner>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -265,15 +273,15 @@ export default function LibraryPage() {
       <div className="lib-toolbar">
         <Segmented
           id="library-filter"
-          ariaLabel="资料筛选"
+          ariaLabel={t("Library filter", "资料筛选")}
           value={filter}
           onChange={setFilter}
           options={[
-            { value: "all", label: "全部" },
-            { value: "image", label: "图片" },
-            { value: "video", label: "视频" },
-            { value: "pending", label: "未处理完" },
-            { value: "excluded", label: "已排除" },
+            { value: "all", label: t("All", "全部") },
+            { value: "image", label: t("Images", "图片") },
+            { value: "video", label: t("Videos", "视频") },
+            { value: "pending", label: t("Pending", "未处理完") },
+            { value: "excluded", label: t("Excluded", "已排除") },
           ]}
         />
         <form className="lib-search" onSubmit={(event) => { event.preventDefault(); void load(0, false); }}>
@@ -281,10 +289,10 @@ export default function LibraryPage() {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="文件名或标签包含"
-            aria-label="筛选文件名或标签"
+            placeholder={t("Filename or tag contains…", "文件名或标签包含")}
+            aria-label={t("Filter by filename or tag", "筛选文件名或标签")}
           />
-          <button type="submit" className="icon-btn" aria-label="筛选">
+          <button type="submit" className="icon-btn" aria-label={t("Filter", "筛选")}>
             <ArrowUpRight size={15} />
           </button>
         </form>
@@ -301,18 +309,18 @@ export default function LibraryPage() {
             exit={{ opacity: 0, y: 18, scale: 0.98 }}
             transition={softSpring}
           >
-            <span className="batch-count">已选 {selectedIds.length}</span>
+            <span className="batch-count">{t(`${selectedIds.length} selected`, `已选 ${selectedIds.length}`)}</span>
             <input
               className="input batch-input"
               value={batchTag}
               onChange={(event) => setBatchTag(event.target.value)}
-              placeholder="统一标签"
+              placeholder={t("Batch tag", "统一标签")}
             />
             <div className="batch-actions">
-              <button type="button" className="btn" disabled={busy || !batchTag.trim()} onClick={() => void runBatch("tag")}>打标签</button>
-              <button type="button" className="btn" disabled={busy} onClick={() => void runBatch("exclude")}>排除</button>
-              <button type="button" className="btn primary" disabled={busy} onClick={() => void runBatch("vectorize")}>加入检索</button>
-              <button type="button" className="icon-btn" onClick={() => setSelectedIds([])} aria-label="取消选择">
+              <button type="button" className="btn" disabled={busy || !batchTag.trim()} onClick={() => void runBatch("tag")}>{t("Tag", "打标签")}</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => void runBatch("exclude")}>{t("Exclude", "排除")}</button>
+              <button type="button" className="btn primary" disabled={busy} onClick={() => void runBatch("vectorize")}>{t("Index", "加入检索")}</button>
+              <button type="button" className="icon-btn" onClick={() => setSelectedIds([])} aria-label={t("Clear selection", "取消选择")}>
                 <X size={16} />
               </button>
             </div>
@@ -330,8 +338,8 @@ export default function LibraryPage() {
           ))}
         </div>
       ) : visibleTiles.length === 0 ? (
-        <Empty title="这里还是空的" action={<Link className="btn primary" to="/">去搜索页添加</Link>}>
-          添加之后会出现缩略图。字幕文件不会单独占一格，会绑在视频上。
+        <Empty title={t("Library is empty", "这里还是空的")} action={<Link className="btn primary" to="/">{t("Import on Explore", "去搜索页添加")}</Link>}>
+          {t("Thumbnails appear once media is added. Subtitles bind to videos rather than occupying separate tiles.", "添加之后会出现缩略图。字幕文件不会单独占一格，会绑在视频上。")}
         </Empty>
       ) : (
         <>
@@ -362,22 +370,22 @@ export default function LibraryPage() {
                             {asset.kind === "video" ? <FilmStrip size={22} /> : <ImageSquare size={22} />}
                             {asset.excluded
                               ? asset.vector_purge_status === "pending" || asset.artifact_purge_status === "pending"
-                                ? "清理中"
-                                : "已清理"
+                                ? t("Purging", "清理中")
+                                : t("Purged", "已清理")
                               : asset.cover_status === "pending"
-                                ? "还在处理"
+                                ? t("Processing", "还在处理")
                                 : asset.kind === "video"
-                                  ? "视频"
-                                  : "无预览"}
+                                  ? t("Video", "视频")
+                                  : t("No preview", "无预览")}
                           </span>
                         )}
                         <span className="lib-shade" />
                         <span className="lib-kind">
                           {asset.kind === "video" ? <FilmStrip size={12} /> : <ImageSquare size={12} />}
-                          {asset.kind === "video" ? "视频" : "图片"}
+                          {asset.kind === "video" ? t("Video", "视频") : t("Image", "图片")}
                         </span>
-                        {asset.excluded ? <span className="lib-badge">已排除</span> : null}
-                        {asset.cover_status === "pending" && asset.cover_locator ? <span className="lib-badge">还在处理</span> : null}
+                        {asset.excluded ? <span className="lib-badge">{t("Excluded", "已排除")}</span> : null}
+                        {asset.cover_status === "pending" && asset.cover_locator ? <span className="lib-badge">{t("Processing", "还在处理")}</span> : null}
                         <span className="lib-cap">
                           <span>{titleOf(asset)}</span>
                           <CaretRight size={14} />
@@ -387,7 +395,7 @@ export default function LibraryPage() {
                     <button
                       type="button"
                       className={`lib-check${checked ? " on" : ""}`}
-                      aria-label={`选择 ${titleOf(asset)}`}
+                      aria-label={t(`Select ${titleOf(asset)}`, `选择 ${titleOf(asset)}`)}
                       onClick={() => toggleSelect(asset.id)}
                     >
                       <AnimatePresence initial={false}>
@@ -414,7 +422,7 @@ export default function LibraryPage() {
             <div className="load-more">
               <button type="button" className="btn" disabled={loading} onClick={() => void load(offset + PAGE, true)}>
                 {loading ? <SpinnerGap size={15} className="spin" /> : null}
-                加载更多
+                {t("Load More", "加载更多")}
                 <span className="load-count">{assets.length} / {total}</span>
               </button>
             </div>
@@ -445,33 +453,33 @@ export default function LibraryPage() {
               <header className="drawer-head">
                 <div>
                   <p className="eyebrow">
-                    {selected.kind === "video" ? "VIDEO" : "IMAGE"} · {originLabel(selected)}
+                    {selected.kind === "video" ? "VIDEO" : "IMAGE"} · {originLabel(selected, lang)}
                   </p>
                   <h3>{titleOf(selected)}</h3>
                 </div>
-                <button type="button" className="icon-btn" onClick={() => setParams({})} aria-label="关闭">
+                <button type="button" className="icon-btn" onClick={() => setParams({})} aria-label={t("Close", "关闭")}>
                   <X size={17} />
                 </button>
               </header>
 
               <div className="drawer-status">
                 <Pill status={selected.excluded ? "warn" : selected.index_state === "ready" ? "ok" : "info"}>
-                  {selected.lifecycle_label || (selected.excluded ? "已排除" : selected.vectorize ? "检索处理中或已就绪" : "仅登记")}
+                  {selected.lifecycle_label || (selected.excluded ? t("Excluded", "已排除") : selected.vectorize ? t("Indexing or ready", "检索处理中或已就绪") : t("Catalog only", "仅登记"))}
                 </Pill>
                 <span className="hint">
-                  {sourceName(selected.source_id) ? `${sourceName(selected.source_id)}` : "本机"}
-                  {selected.source_deleted ? " · 原文件现在找不到" : ""}
+                  {sourceName(selected.source_id) ? `${sourceName(selected.source_id)}` : t("Local", "本机")}
+                  {selected.source_deleted ? t(" · Original unavailable", " · 原文件现在找不到") : ""}
                 </span>
               </div>
               {selected.excluded ? (
                 <p className="hint" style={{ marginTop: -8 }}>
                   {selected.vector_purge_status === "failed" || selected.artifact_purge_status === "failed"
-                    ? selected.vector_purge_message || selected.artifact_purge_message || "清理失败"
+                    ? selected.vector_purge_message || selected.artifact_purge_message || t("Purge failed", "清理失败")
                     : selected.vector_purge_status === "pending" || selected.artifact_purge_status === "pending"
-                      ? "正在后台清理向量与预览…"
+                      ? t("Purging vectors and previews in background…", "正在后台清理向量与预览…")
                       : selected.fully_deleted
-                        ? "向量与预览已清理完成。"
-                        : selected.vector_purge_message || "向量已清理。"}
+                        ? t("Vectors and previews purged.", "向量与预览已清理完成。")
+                        : selected.vector_purge_message || t("Vectors purged.", "向量已清理。")}
                 </p>
               ) : null}
 
@@ -492,22 +500,22 @@ export default function LibraryPage() {
               ) : null}
 
               <section className="drawer-section">
-                <h4>封面与描述</h4>
+                <h4>{t("Cover & Description", "封面与描述")}</h4>
                 {selected.video_cover_locator || selected.cover_locator ? (
                   <img
                     src={authorizedMediaUrl(selected.video_cover_locator || selected.cover_locator || "")}
-                    alt={`${titleOf(selected)} 封面`}
+                    alt={`${titleOf(selected)} ${t("cover", "封面")}`}
                     style={{ width: "100%", maxHeight: 180, objectFit: "cover", borderRadius: 10, marginBottom: 10 }}
                   />
                 ) : null}
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
                   <label className="btn ghost" style={{ cursor: "pointer" }}>
                     <input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => void uploadSelectedCover(e)} />
-                    更换封面
+                    {t("Replace Cover", "更换封面")}
                   </label>
                   {selected.source_url ? (
                     <a className="btn ghost" href={selected.source_url} target="_blank" rel="noreferrer">
-                      打开原网页
+                      {t("Open Source URL", "打开原网页")}
                       <ArrowUpRight size={13} />
                     </a>
                   ) : null}
@@ -516,7 +524,7 @@ export default function LibraryPage() {
                   className="input"
                   rows={4}
                   value={descDraft}
-                  placeholder="补充图片或视频描述（支持元数据文本检索）"
+                  placeholder={t("Add description for metadata lexical search", "补充图片或视频描述（支持元数据文本检索）")}
                   onChange={(event) => setDescDraft(event.target.value)}
                   style={{
                     width: "100%",
@@ -528,11 +536,11 @@ export default function LibraryPage() {
                     marginBottom: 8,
                   }}
                 />
-                <button className="btn" type="button" disabled={busy} onClick={() => void saveDescription()}>保存描述</button>
+                <button className="btn" type="button" disabled={busy} onClick={() => void saveDescription()}>{t("Save Description", "保存描述")}</button>
               </section>
 
               <section className="drawer-section">
-                <h4>标签</h4>
+                <h4>{t("Tags", "标签")}</h4>
                 <div className="chip-row">
                   {(selected.tags || []).map((item) => (
                     <button
@@ -546,19 +554,19 @@ export default function LibraryPage() {
                       <X size={11} />
                     </button>
                   ))}
-                  {!selected.tags?.length ? <span className="hint">还没有标签。</span> : null}
+                  {!selected.tags?.length ? <span className="hint">{t("No tags yet.", "还没有标签。")}</span> : null}
                 </div>
                 <form className="chip-form" onSubmit={(event) => void addTag(event)}>
-                  <input className="input" value={tag} onChange={(event) => setTag(event.target.value)} placeholder="新标签" />
-                  <button className="btn" type="submit" disabled={busy}>加上</button>
+                  <input className="input" value={tag} onChange={(event) => setTag(event.target.value)} placeholder={t("New tag", "新标签")} />
+                  <button className="btn" type="submit" disabled={busy}>{t("Add", "加上")}</button>
                 </form>
               </section>
 
               {selected.kind === "video" ? (
                 <section className="drawer-section">
-                  <h4>字幕</h4>
+                  <h4>{t("Subtitles", "字幕")}</h4>
                   {assocs.length === 0 ? (
-                    <p className="hint">同名字幕只作为建议，仍要你点选。不会自动绑 ASS。</p>
+                    <p className="hint">{t("Same-name subtitles are only suggested; you still choose explicitly. ASS files are never auto-bound.", "同名字幕只作为建议，仍要你点选。不会自动绑 ASS。")}</p>
                   ) : (
                     assocs.map((item) => (
                       <div key={item.id} className="assoc-row">
@@ -568,7 +576,7 @@ export default function LibraryPage() {
                           className="btn ghost"
                           onClick={() => void api.deleteAssociation(item.id).then(() => api.associations(selected.id).then((data) => setAssocs(data.items)))}
                         >
-                          解开
+                          {t("Unlink", "解开")}
                         </button>
                       </div>
                     ))
@@ -576,15 +584,15 @@ export default function LibraryPage() {
                   {subs.length > 0 ? (
                     <div className="chip-form">
                       <select className="input" value={subtitleId} onChange={(event) => setSubtitleId(event.target.value)}>
-                        <option value="">从已有字幕里选</option>
+                        <option value="">{t("Choose from existing subtitles", "从已有字幕里选")}</option>
                         {subs.map((sub) => (
                           <option key={sub.id} value={sub.id}>{titleOf(sub)}</option>
                         ))}
                       </select>
-                      <button type="button" className="btn" disabled={busy || !subtitleId} onClick={() => void bindSubtitle()}>绑定</button>
+                      <button type="button" className="btn" disabled={busy || !subtitleId} onClick={() => void bindSubtitle()}>{t("Bind", "绑定")}</button>
                     </div>
                   ) : (
-                    <p className="hint">还没有字幕文件。可到搜索页右上角添加，或稍后绑定。</p>
+                    <p className="hint">{t("No subtitle files yet. Import one via Explore or bind later.", "还没有字幕文件。可到搜索页右上角添加，或稍后绑定。")}</p>
                   )}
                 </section>
               ) : null}
@@ -601,13 +609,13 @@ export default function LibraryPage() {
                     sourceMissing: Boolean(selected.source_deleted),
                   })}
                 >
-                  预览
+                  {t("Preview", "预览")}
                 </button>
                 {selected.excluded ? (
                   selected.can_restore === false ? (
-                    <p className="hint">平台原片已删，不能从资料库恢复，需要重新上传。</p>
+                    <p className="hint">{t("Hosted original was deleted and cannot be restored; please re-upload.", "平台原片已删，不能从资料库恢复，需要重新上传。")}</p>
                   ) : (
-                    <button type="button" className="btn primary" disabled={busy} onClick={() => void act("restore", selected.id)}>恢复</button>
+                    <button type="button" className="btn primary" disabled={busy} onClick={() => void act("restore", selected.id)}>{t("Restore", "恢复")}</button>
                   )
                 ) : (
                   <button
@@ -618,17 +626,17 @@ export default function LibraryPage() {
                       const hosted = selected.origin === "hosted";
                       const ok = window.confirm(
                         hosted
-                          ? "排除后会先删向量，再删预览和平台上的原片，不能再从资料库恢复。确定？"
-                          : "排除后会先删向量，再删预览。网盘里的原文件还在，之后可以恢复。确定？",
+                          ? t("Excluding deletes vectors first, then previews and hosted originals (cannot be restored). Continue?", "排除后会先删向量，再删预览和平台上的原片，不能再从资料库恢复。确定？")
+                          : t("Excluding deletes vectors and previews. Originals in your bucket stay intact and can be restored later. Continue?", "排除后会先删向量，再删预览。网盘里的原文件还在，之后可以恢复。确定？"),
                       );
                       if (ok) void act("exclude", selected.id);
                     }}
                   >
-                    排除
+                    {t("Exclude", "排除")}
                   </button>
                 )}
                 {!selected.vectorize && !selected.excluded ? (
-                  <button type="button" className="btn primary" disabled={busy} onClick={() => void act("vectorize", selected.id)}>加入检索</button>
+                  <button type="button" className="btn primary" disabled={busy} onClick={() => void act("vectorize", selected.id)}>{t("Index", "加入检索")}</button>
                 ) : null}
               </footer>
             </motion.aside>

@@ -25,6 +25,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
+import { useI18n, type Lang } from "../i18n";
 import ArcIndicator from "../cinema/ArcIndicator";
 import CinemaCarousel, { type CinemaCarouselHandle, type CinemaSlideItem } from "../cinema/CinemaCarousel";
 import ScreeningRoom, { type ScreeningTarget } from "../cinema/ScreeningRoom";
@@ -37,17 +38,23 @@ type Mode = "text" | "image" | "lexical";
 type HitFilter = "all" | "image" | "video" | "subtitle";
 type ViewMode = "cinema" | "grid";
 
-const sourceLabel: Record<string, string> = {
-  visual: "画面",
-  subtitle: "字幕",
-  mixed: "画面 + 字幕",
-  visual_only: "仅画面",
-  subtitle_only: "仅字幕",
-  visual_and_subtitle: "画面 + 字幕",
-};
+function getSourceLabel(lang: Lang, key: string) {
+  const isEn = lang === "en";
+  const map: Record<string, string> = {
+    visual: isEn ? "Visual" : "画面",
+    subtitle: isEn ? "Subtitle" : "字幕",
+    mixed: isEn ? "Visual + Subtitle" : "画面 + 字幕",
+    visual_only: isEn ? "Visual only" : "仅画面",
+    subtitle_only: isEn ? "Subtitle only" : "仅字幕",
+    visual_and_subtitle: isEn ? "Visual + Subtitle" : "画面 + 字幕",
+  };
+  return map[key] || key;
+}
 
-const textExamples = ["海边的黄昏", "大象", "雨里亮着灯的街", "厨房桌上的橘子"];
-const lexicalExamples = ["IMG_2043", "生日", "mp4"];
+const textExamplesEn = ["sunset by the sea", "elephant", "lit street in the rain", "oranges on kitchen table"];
+const textExamplesZh = ["海边的黄昏", "大象", "雨里亮着灯的街", "厨房桌上的橘子"];
+const lexicalExamplesEn = ["IMG_2043", "birthday", "mp4"];
+const lexicalExamplesZh = ["IMG_2043", "生日", "mp4"];
 
 function fileName(item: { display_name?: string; object_key: string }) {
   return item.display_name || item.object_key.split("/").pop() || item.object_key;
@@ -100,6 +107,7 @@ function scoreFill(score: number) {
 }
 
 function RotatingPlaceholder({ examples }: { examples: string[] }) {
+  const { t } = useI18n();
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -119,7 +127,7 @@ function RotatingPlaceholder({ examples }: { examples: string[] }) {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.32, ease: EASE }}
         >
-          例如：{examples[index]}
+          {t(`e.g. ${examples[index]}`, `例如：${examples[index]}`)}
         </motion.span>
       </AnimatePresence>
     </span>
@@ -127,6 +135,7 @@ function RotatingPlaceholder({ examples }: { examples: string[] }) {
 }
 
 export default function SearchPage() {
+  const { lang, t } = useI18n();
   const carouselRef = useRef<CinemaCarouselHandle | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>("cinema");
@@ -239,7 +248,7 @@ export default function SearchPage() {
         setLexicalItems(data.items as LexicalHit[]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "没搜到，或检索还没接通");
+      setError(err instanceof Error ? err.message : t("No results, or search is not connected yet", "没搜到，或检索还没接通"));
     } finally {
       setBusy(false);
     }
@@ -254,7 +263,7 @@ export default function SearchPage() {
     try {
       setResult(await api.searchImage(file, extra));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "没搜到，或检索还没接通");
+      setError(err instanceof Error ? err.message : t("No results, or search is not connected yet", "没搜到，或检索还没接通"));
     } finally {
       setBusy(false);
     }
@@ -298,7 +307,7 @@ export default function SearchPage() {
           coverUrl: target.coverLocator || `/api/previews/${hit.asset_id}/frames/0`,
           score: hit.score,
           timeSeconds: hit.time_seconds,
-          hitSource: sourceLabel[hit.hit_method || hit.hit_source] || hit.hit_source,
+          hitSource: getSourceLabel(lang, hit.hit_method || hit.hit_source),
           subtitleExcerpt: hit.subtitle_excerpt,
           sourceMissing: hit.source_available === false,
         });
@@ -313,7 +322,7 @@ export default function SearchPage() {
           title: target.title,
           kind: item.kind,
           coverUrl: target.coverLocator || `/api/previews/${item.id}/frames/0`,
-          hitSource: item.vectorize ? "已建索引" : "仅登记",
+          hitSource: item.vectorize ? t("Indexed", "已建索引") : t("Catalog only", "仅登记"),
           sourceMissing: item.source_deleted === true,
         });
         map.set(item.id, target);
@@ -327,7 +336,7 @@ export default function SearchPage() {
           title: target.title,
           kind: item.kind,
           coverUrl: target.coverLocator || `/api/previews/${item.id}/frames/0`,
-          hitSource: item.vectorize ? "馆藏展映" : "待向量化",
+          hitSource: item.vectorize ? t("Archive Reel", "馆藏展映") : t("Pending index", "待向量化"),
           sourceMissing: item.source_deleted === true,
         });
         map.set(item.id, target);
@@ -335,7 +344,7 @@ export default function SearchPage() {
     }
 
     return { slides: nextSlides, screeningMap: map };
-  }, [result, visibleHits, lexicalItems, showcaseAssets]);
+  }, [result, visibleHits, lexicalItems, showcaseAssets, lang, t]);
 
   const openSlideById = useCallback(
     (assetId: string) => {
@@ -375,20 +384,26 @@ export default function SearchPage() {
   let idleEmpty: { title: string; body: string; action?: { to: string; label: string } } | null = null;
   if (!searched && !error && !busy && slides.length === 0) {
     if ((libraryTotal ?? 0) === 0) {
-      idleEmpty = { title: "资料库还是空的", body: "点击下方「添加」引入 MinIO 桶或上传本地影片图片。" };
+      idleEmpty = {
+        title: t("Library is empty", "资料库还是空的"),
+        body: t(
+          "Click Import below to index a MinIO bucket or upload local videos and images.",
+          "点击下方「添加」引入 MinIO 桶或上传本地影片图片。",
+        ),
+      };
     } else if (!canVisual) {
       idleEmpty = {
-        title: "现在还不能按画面搜",
+        title: t("Visual search is not ready yet", "现在还不能按画面搜"),
         body: connected
           ? pendingTotal > 0
-            ? "有文件还在抽帧或编码。可以先用「文件名 / 标签」。"
-            : "库里有仅登记的文件。文件名或标签能搜到它们；要按画面搜，到资料库点「加入检索」。"
-          : "文字和图片搜索需要模型和索引都接通。可以先用「文件名 / 标签」。",
+            ? t("Files are still extracting frames or embeddings. You can search by filename or tags in the meantime.", "有文件还在抽帧或编码。可以先用「文件名 / 标签」。")
+            : t("Only catalog-only assets are in the library. Search them by filename/tags, or click Index in Library for visual search.", "库里有仅登记的文件。文件名或标签能搜到它们；要按画面搜，到资料库点「加入检索」。")
+          : t("Text and image search require both the embedding model and Milvus to be ready. You can use Lexical search meanwhile.", "文字和图片搜索需要模型和索引都接通。可以先用「文件名 / 标签」。"),
         action: connected
           ? pendingTotal > 0
-            ? { to: "/activity", label: "去仪表盘" }
-            : { to: "/library", label: "去资料库" }
-          : { to: "/settings", label: "去设置" },
+            ? { to: "/activity", label: t("Go to Activity", "去仪表盘") }
+            : { to: "/library", label: t("Go to Library", "去资料库") }
+          : { to: "/settings", label: t("Go to Settings", "去设置") },
       };
     }
   }
@@ -422,22 +437,22 @@ export default function SearchPage() {
             <div className="stage-status-chip">
               <span className="status-tag">SEMANTIC CUT</span>
               <strong>{visibleHits.length}</strong>
-              <span>个相近画面</span>
+              <span>{t("matching frames", "个相近画面")}</span>
             </div>
           ) : lexicalItems ? (
             <div className="stage-status-chip">
               <span className="status-tag">LEXICAL MATCH</span>
               <strong>{lexicalItems.length}</strong>
-              <span>个匹配档案</span>
+              <span>{t("matching assets", "个匹配档案")}</span>
             </div>
           ) : (
             <div className="stage-status-chip">
               <span className="status-tag">ARCHIVE REEL</span>
               <span>
-                {libraryTotal != null ? <AnimatedNumber value={libraryTotal} /> : "—"} 在库 ·{" "}
-                {indexedTotal != null ? <AnimatedNumber value={indexedTotal} /> : "—"} 可搜
+                {libraryTotal != null ? <AnimatedNumber value={libraryTotal} /> : "—"} {t("in library", "在库")} ·{" "}
+                {indexedTotal != null ? <AnimatedNumber value={indexedTotal} /> : "—"} {t("searchable", "可搜")}
               </span>
-              {pendingTotal > 0 ? <span className="stage-pending-dot">{pendingTotal} 处理中</span> : null}
+              {pendingTotal > 0 ? <span className="stage-pending-dot">{pendingTotal} {t("processing", "处理中")}</span> : null}
             </div>
           )}
 
@@ -445,14 +460,14 @@ export default function SearchPage() {
             <div className="stage-filter-row">
               <Segmented
                 id="hit-filter"
-                ariaLabel="结果筛选"
+                ariaLabel={t("Filter results", "结果筛选")}
                 value={hitFilter}
                 onChange={setHitFilter}
                 options={[
-                  { value: "all", label: "全部" },
-                  { value: "image", label: "图片" },
-                  { value: "video", label: "视频" },
-                  { value: "subtitle", label: "有字幕" },
+                  { value: "all", label: t("All", "全部") },
+                  { value: "image", label: t("Images", "图片") },
+                  { value: "video", label: t("Videos", "视频") },
+                  { value: "subtitle", label: t("Subtitles", "有字幕") },
                 ]}
               />
             </div>
@@ -461,20 +476,20 @@ export default function SearchPage() {
           {searched ? (
             <button type="button" className="stage-reset-btn" onClick={resetResults}>
               <ArrowCounterClockwise size={13} />
-              <span>返回展映</span>
+              <span>{t("Back to Reel", "返回展映")}</span>
             </button>
           ) : null}
         </div>
 
         <div className="stage-hud-right">
-          <div className="view-mode-switch" role="group" aria-label="视图切换">
+          <div className="view-mode-switch" role="group" aria-label={t("View mode", "视图切换")}>
             <button
               type="button"
               className={viewMode === "cinema" ? "active" : ""}
               onClick={() => setViewMode("cinema")}
             >
               <Cube size={14} weight={viewMode === "cinema" ? "fill" : "regular"} />
-              <span>3D 影院</span>
+              <span>{t("3D Cinema", "3D 影院")}</span>
             </button>
             <button
               type="button"
@@ -482,7 +497,7 @@ export default function SearchPage() {
               onClick={() => setViewMode("grid")}
             >
               <SquaresFour size={14} weight={viewMode === "grid" ? "fill" : "regular"} />
-              <span>胶片网格</span>
+              <span>{t("Film Grid", "胶片网格")}</span>
             </button>
           </div>
         </div>
@@ -498,18 +513,18 @@ export default function SearchPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
           >
-            <Banner kind="warn" title="检索未完成">{error}</Banner>
+            <Banner kind="warn" title={t("Search incomplete", "检索未完成")}>{error}</Banner>
           </motion.div>
         ) : null}
       </AnimatePresence>
 
       {/* 主舞台：3D WebGL 曲面柱面影院 OR 胶片暗室网格 */}
       {viewMode === "cinema" ? (
-        <section className="cinema-webgl-stage" aria-label="3D 电影胶片走廊">
+        <section className="cinema-webgl-stage" aria-label={t("3D Cinema Film Corridor", "3D 电影胶片走廊")}>
           {busy ? (
             <div className="stage-center-state">
               <SpinnerGap size={28} className="spin" />
-              <p>正在穿透高维语义空间...</p>
+              <p>{t("Traversing semantic vector space...", "正在穿透高维语义空间...")}</p>
             </div>
           ) : slides.length > 0 ? (
             <>
@@ -543,7 +558,7 @@ export default function SearchPage() {
                     <Link className="btn" to={idleEmpty.action.to}>{idleEmpty.action.label}</Link>
                   ) : (
                     <button type="button" className="btn primary" onClick={() => setAddOpen(true)}>
-                      添加资源
+                      {t("Import Media", "添加资源")}
                     </button>
                   )
                 }
@@ -553,8 +568,8 @@ export default function SearchPage() {
             </div>
           ) : (
             <div className="stage-center-state">
-              <Empty title="当前筛选条件没有匹配画面">
-                <button type="button" className="btn" onClick={resetResults}>返回全部展映</button>
+              <Empty title={t("No frames match this filter", "当前筛选条件没有匹配画面")}>
+                <button type="button" className="btn" onClick={resetResults}>{t("Show Full Reel", "返回全部展映")}</button>
               </Empty>
             </div>
           )}
@@ -566,15 +581,18 @@ export default function SearchPage() {
           ) : result ? (
             <div className="results">
               {result.items.length === 0 ? (
-                <Empty title="没有找到相近的画面或字幕" action={<Link className="btn" to="/library">去资料库</Link>}>
-                  不会为了凑满数量硬塞不相近的内容。库里若有仅登记的文件，用「文件名或标签」找。
+                <Empty title={t("No similar frames or subtitles found", "没有找到相近的画面或字幕")} action={<Link className="btn" to="/library">{t("Go to Library", "去资料库")}</Link>}>
+                  {t(
+                    "Low-confidence results are never padded in. For catalog-only assets, try Lexical search by filename or tags.",
+                    "不会为了凑满数量硬塞不相近的内容。库里若有仅登记的文件，用「文件名或标签」找。",
+                  )}
                 </Empty>
               ) : (
                 <>
                   {hitFilter !== "video" && images.length > 0 ? (
                     <div className="result-block">
                       <div className="result-block-head">
-                        <span className="eyebrow">图片帧</span>
+                        <span className="eyebrow">{t("Image Frames", "图片帧")}</span>
                         <span className="result-count">{images.length}</span>
                       </div>
                       <div className="hit-grid">
@@ -588,7 +606,7 @@ export default function SearchPage() {
                   {hitFilter !== "image" && videos.length > 0 ? (
                     <div className="result-block">
                       <div className="result-block-head">
-                        <span className="eyebrow">视频卷</span>
+                        <span className="eyebrow">{t("Video Reels", "视频卷")}</span>
                         <span className="result-count">{videos.length}</span>
                       </div>
                       <div className="hit-grid">
@@ -599,7 +617,7 @@ export default function SearchPage() {
                     </div>
                   ) : null}
 
-                  {visibleHits.length === 0 ? <p className="hint">这一类里没有结果。</p> : null}
+                  {visibleHits.length === 0 ? <p className="hint">{t("No hits in this category.", "这一类里没有结果。")}</p> : null}
                 </>
               )}
             </div>
@@ -607,8 +625,8 @@ export default function SearchPage() {
             <div className="results">
               {lexicalNote ? <p className="hint" style={{ marginBottom: 16 }}>{lexicalNote}</p> : null}
               {lexicalItems.length === 0 ? (
-                <Empty title="没有这个名字或标签" action={<Link className="btn" to="/library">去资料库</Link>}>
-                  这是包含匹配，不会理解错别字。
+                <Empty title={t("No matching filename or tag", "没有这个名字或标签")} action={<Link className="btn" to="/library">{t("Go to Library", "去资料库")}</Link>}>
+                  {t("Lexical search uses substring matching and does not auto-correct typos.", "这是包含匹配，不会理解错别字。")}
                 </Empty>
               ) : (
                 <div className="hit-grid">
@@ -621,7 +639,7 @@ export default function SearchPage() {
           ) : slides.length > 0 ? (
             <div className="results">
               <div className="result-block-head" style={{ marginBottom: 18 }}>
-                <span className="eyebrow">ARCHIVE SHOWCASE · 最近档案</span>
+                <span className="eyebrow">{t("ARCHIVE SHOWCASE · RECENT MEDIA", "ARCHIVE SHOWCASE · 最近档案")}</span>
                 <span className="result-count">{slides.length}</span>
               </div>
               <div className="hit-grid">
@@ -637,7 +655,7 @@ export default function SearchPage() {
                 idleEmpty.action ? (
                   <Link className="btn" to={idleEmpty.action.to}>{idleEmpty.action.label}</Link>
                 ) : (
-                  <button type="button" className="btn primary" onClick={() => setAddOpen(true)}>添加资源</button>
+                  <button type="button" className="btn primary" onClick={() => setAddOpen(true)}>{t("Import Media", "添加资源")}</button>
                 )
               }
             >
@@ -659,7 +677,7 @@ export default function SearchPage() {
               transition={{ duration: 0.2, ease: EASE }}
             >
               <label className="dock-tune-field">
-                <span>返回数量</span>
+                <span>{t("Top N", "返回数量")}</span>
                 <input
                   type="number"
                   min={1}
@@ -669,24 +687,26 @@ export default function SearchPage() {
                 />
               </label>
               <label className="dock-tune-field">
-                <span>相似阈值</span>
+                <span>{t("Threshold", "相似阈值")}</span>
                 <input
                   type="number"
                   step={0.01}
                   min={0}
                   max={1}
-                  placeholder="0 (不限制)"
+                  placeholder={t("0 (no limit)", "0 (不限制)")}
                   value={threshold}
                   onChange={(e) => setThreshold(e.target.value)}
                 />
               </label>
-              <span className="dock-tune-hint">余弦相关度仅作排序，设阈值可裁掉低匹配帧</span>
+              <span className="dock-tune-hint">
+                {t("Cosine similarity is for ranking; set a threshold to trim weak hits.", "余弦相关度仅作排序，设阈值可裁掉低匹配帧")}
+              </span>
             </motion.div>
           ) : null}
         </AnimatePresence>
 
         <form className="director-dock" onSubmit={onSubmit} onPointerMove={spotlight}>
-          <div className="dock-mode-tabs" role="tablist" aria-label="检索模式">
+          <div className="dock-mode-tabs" role="tablist" aria-label={t("Search mode", "检索模式")}>
             <button
               type="button"
               role="tab"
@@ -697,7 +717,7 @@ export default function SearchPage() {
                 setError(null);
               }}
             >
-              语义
+              {t("Semantic", "语义")}
             </button>
             <button
               type="button"
@@ -709,7 +729,7 @@ export default function SearchPage() {
                 setError(null);
               }}
             >
-              以图
+              {t("Image", "以图")}
             </button>
             <button
               type="button"
@@ -721,7 +741,7 @@ export default function SearchPage() {
                 setError(null);
               }}
             >
-              词法
+              {t("Lexical", "词法")}
             </button>
           </div>
 
@@ -737,7 +757,7 @@ export default function SearchPage() {
                 </span>
               )}
               <label className="dock-file-label">
-                <span>{imageFile ? imageFile.name : "选择或拖入一张样图..."}</span>
+                <span>{imageFile ? imageFile.name : t("Choose or drop a reference image...", "选择或拖入一张样图...")}</span>
                 <input type="file" accept="image/*" hidden disabled={busy} onChange={onPickImage} />
               </label>
               {imageFile ? (
@@ -745,7 +765,7 @@ export default function SearchPage() {
                   type="button"
                   className="dock-icon-btn"
                   onClick={() => setPickedImage(null)}
-                  aria-label="清除图片"
+                  aria-label={t("Clear image", "清除图片")}
                 >
                   <X size={14} />
                 </button>
@@ -759,16 +779,26 @@ export default function SearchPage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                aria-label={mode === "lexical" ? "文件名或标签" : "画面语义描述"}
+                aria-label={mode === "lexical" ? t("Filename or tags", "文件名或标签") : t("Visual scene description", "画面语义描述")}
               />
               {!query ? (
-                <RotatingPlaceholder examples={mode === "lexical" ? lexicalExamples : textExamples} />
+                <RotatingPlaceholder
+                  examples={
+                    mode === "lexical"
+                      ? lang === "en"
+                        ? lexicalExamplesEn
+                        : lexicalExamplesZh
+                      : lang === "en"
+                        ? textExamplesEn
+                        : textExamplesZh
+                  }
+                />
               ) : (
                 <button
                   type="button"
                   className="dock-icon-btn"
                   onClick={() => setQuery("")}
-                  aria-label="清空输入"
+                  aria-label={t("Clear input", "清空输入")}
                 >
                   <X size={14} />
                 </button>
@@ -782,8 +812,8 @@ export default function SearchPage() {
                 type="button"
                 className={`dock-icon-btn${tuneOpen ? " active" : ""}`}
                 onClick={() => setTuneOpen((v) => !v)}
-                title="检索参数 (TopN / 阈值)"
-                aria-label="检索参数"
+                title={t("Search tuning (Top N / Threshold)", "检索参数 (TopN / 阈值)")}
+                aria-label={t("Search tuning", "检索参数")}
               >
                 <SlidersHorizontal size={16} />
               </button>
@@ -793,15 +823,15 @@ export default function SearchPage() {
               type="button"
               className="dock-add-btn"
               onClick={() => setAddOpen(true)}
-              title="导入 MinIO 资源或上传新媒体"
+              title={t("Import from MinIO or upload new media", "导入 MinIO 资源或上传新媒体")}
             >
               <Plus size={14} weight="bold" />
-              <span>导入</span>
+              <span>{t("Import", "导入")}</span>
             </button>
 
             <button type="submit" className="dock-submit-btn" disabled={busy || !canSubmit}>
               {busy ? <SpinnerGap size={16} className="spin" /> : <ArrowRight size={16} weight="bold" />}
-              <span>{busy ? "检索中" : "搜索"}</span>
+              <span>{busy ? t("Searching", "检索中") : t("Search", "搜索")}</span>
             </button>
           </div>
         </form>
@@ -818,7 +848,7 @@ export default function SearchPage() {
           >
             <div className="drop-card">
               <ImageSquare size={36} weight="light" />
-              <p>松开图片，立即在 3D 影院空间中搜寻相似构图</p>
+              <p>{t("Drop image to search visually similar frames in 3D Cinema", "松开图片，立即在 3D 影院空间中搜寻相似构图")}</p>
             </div>
           </motion.div>
         ) : null}
@@ -857,6 +887,7 @@ function LexicalHitCard({
   index: number;
   onOpen: (target: ScreeningTarget) => void;
 }) {
+  const { t } = useI18n();
   const [coverFailed, setCoverFailed] = useState(false);
   const cover = item.cover_locator || `/api/previews/${item.id}/frames/0`;
   const tags = item.tags ?? [];
@@ -882,14 +913,14 @@ function LexicalHitCard({
         {coverFailed ? (
           <span className="hit-fallback">
             {item.kind === "video" ? <FilmStrip size={22} /> : <ImageSquare size={22} />}
-            {item.cover_status === "pending" ? "还在处理" : "无预览"}
+            {item.cover_status === "pending" ? t("Processing", "还在处理") : t("No preview", "无预览")}
           </span>
         ) : (
           <img src={authorizedMediaUrl(cover)} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
         )}
         <span className="hit-kind">
           {item.kind === "video" ? <FilmStrip size={13} /> : <ImageSquare size={13} />}
-          {item.kind === "video" ? "视频" : "图片"}
+          {item.kind === "video" ? t("Video", "视频") : t("Image", "图片")}
         </span>
         <span className="hit-open">
           <ArrowUpRight size={15} />
@@ -901,7 +932,7 @@ function LexicalHitCard({
         <p className="hit-meta">
           <span>{item.lifecycle_label || item.status}</span>
           <span className="meta-dot" />
-          <span>{item.vectorize ? "已加入检索" : "仅登记"}</span>
+          <span>{item.vectorize ? t("Indexed", "已加入检索") : t("Catalog only", "仅登记")}</span>
         </p>
 
         <div className="hit-tags">
@@ -910,12 +941,12 @@ function LexicalHitCard({
               <span className="tag-chip" key={tag}>{tag}</span>
             ))
           ) : (
-            <span className="tag-chip muted">还没有标签</span>
+            <span className="tag-chip muted">{t("No tags yet", "还没有标签")}</span>
           )}
         </div>
 
         <Link className="hit-link" to={`/library?id=${item.id}`}>
-          在资料库打开
+          {t("Open in Library", "在资料库打开")}
           <ArrowUpRight size={13} />
         </Link>
       </div>
@@ -932,7 +963,8 @@ function SearchHitCard({
   index: number;
   onOpen: (target: ScreeningTarget) => void;
 }) {
-  const method = sourceLabel[item.hit_method || item.hit_source] || item.hit_source;
+  const { lang, t } = useI18n();
+  const method = getSourceLabel(lang, item.hit_method || item.hit_source);
   const cover = item.previews[0]?.locator;
   const fill = scoreFill(item.score);
 
@@ -959,12 +991,12 @@ function SearchHitCard({
         ) : (
           <span className="hit-fallback">
             <ImageSquare size={22} />
-            无预览
+            {t("No preview", "无预览")}
           </span>
         )}
         <span className="hit-kind">
           {item.kind === "video" ? <FilmStrip size={13} /> : <ImageSquare size={13} />}
-          {item.kind === "video" ? "视频" : "图片"}
+          {item.kind === "video" ? t("Video", "视频") : t("Image", "图片")}
         </span>
         {item.kind === "video" && item.time_seconds != null ? (
           <span className="hit-time">{item.time_seconds.toFixed(1)}s</span>
@@ -979,10 +1011,10 @@ function SearchHitCard({
         <p className="hit-meta">
           <span>{method}</span>
           <span className="meta-dot" />
-          <span>{item.source_available ? "源文件可用" : "源文件不可用"}</span>
+          <span>{item.source_available ? t("Source available", "源文件可用") : t("Source unavailable", "源文件不可用")}</span>
         </p>
 
-        <div className="score-line" title="相关度只用来排序，不是正确率">
+        <div className="score-line" title={t("Relevance score is for ranking only, not accuracy", "相关度只用来排序，不是正确率")}>
           <span className="score-value">{item.score.toFixed(4)}</span>
           <span className="score-track">
             <motion.span
@@ -1010,7 +1042,7 @@ function SearchHitCard({
         ) : null}
 
         <Link className="hit-link" to={`/library?id=${item.asset_id}`}>
-          在资料库打开
+          {t("Open in Library", "在资料库打开")}
           <ArrowUpRight size={13} />
         </Link>
       </div>

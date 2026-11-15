@@ -15,6 +15,7 @@ import {
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
 import { Portal } from "../components/ui";
+import { useI18n } from "../i18n";
 import { EASE } from "../motion";
 import type { Association, FrameRecord } from "../types";
 
@@ -46,13 +47,13 @@ export type ScreeningTarget = {
   }[];
 };
 
-const hitMethodMap: Record<string, string> = {
-  visual: "画面向量",
-  subtitle: "字幕语义",
-  mixed: "画面 + 字幕",
-  visual_only: "仅画面",
-  subtitle_only: "仅字幕",
-  visual_and_subtitle: "画面 + 字幕",
+const hitMethodMap: Record<string, [string, string]> = {
+  visual: ["Visual Vector", "画面向量"],
+  subtitle: ["Subtitle Semantic", "字幕语义"],
+  mixed: ["Visual + Subtitle", "画面 + 字幕"],
+  visual_only: ["Visual Only", "仅画面"],
+  subtitle_only: ["Subtitle Only", "仅字幕"],
+  visual_and_subtitle: ["Visual + Subtitle", "画面 + 字幕"],
 };
 
 function fmtTime(sec: number | null | undefined) {
@@ -72,6 +73,7 @@ export default function ScreeningRoom({
   onClose: () => void;
   onSearchSimilar?: (file: File) => void;
 }) {
+  const { lang, t } = useI18n();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [mediaError, setMediaError] = useState(false);
   const [hdReady, setHdReady] = useState(false);
@@ -160,7 +162,7 @@ export default function ScreeningRoom({
     try {
       const updated = await api.updateAsset(target.assetId, { description });
       setDescription(updated.description ?? description);
-      setDescNotice("已保存");
+      setDescNotice(t("Saved", "已保存"));
     } finally {
       setDescBusy(false);
     }
@@ -311,14 +313,14 @@ export default function ScreeningRoom({
                   onClick={() => void handleSearchSimilar()}
                 >
                   <MagnifyingGlass size={14} weight="bold" />
-                  <span>{similarBusy ? "采样中..." : "搜相似画面"}</span>
+                  <span>{similarBusy ? t("Sampling...", "采样中...") : t("Find Similar", "搜相似画面")}</span>
                 </button>
               ) : null}
               <Link className="screening-action-btn" to={`/library?id=${target.assetId}`} onClick={onClose}>
-                <span>资料库详情</span>
+                <span>{t("Open in Library", "资料库详情")}</span>
                 <ArrowUpRight size={14} />
               </Link>
-              <button type="button" className="screening-close-btn" onClick={onClose} aria-label="关闭放映室">
+              <button type="button" className="screening-close-btn" onClick={onClose} aria-label={t("Close Screening Room", "关闭放映室")}>
                 <X size={16} weight="bold" />
               </button>
             </div>
@@ -359,14 +361,14 @@ export default function ScreeningRoom({
                     <img className="screening-media" src={coverUrl} alt={target.title} />
                     <span className="screening-source-note">
                       {noOriginalStored
-                        ? "未保存原文件（外链检索模式）· 正在展示预览帧"
+                        ? t("No original stored (external-link mode) · Showing preview frame", "未保存原文件（外链检索模式）· 正在展示预览帧")
                         : target.sourceMissing
-                          ? "源文件未保存在本地 · 正在放映预览帧"
-                          : "原文件无法直接播放 · 已切换预览帧"}
+                          ? t("Original file not stored locally · Showing preview frame", "源文件未保存在本地 · 正在放映预览帧")
+                          : t("Original cannot be played directly · Switched to preview frame", "原文件无法直接播放 · 已切换预览帧")}
                     </span>
                     {target.sourceUrl ? (
                       <a className="screening-action-btn" href={target.sourceUrl} target="_blank" rel="noreferrer">
-                        <span>打开原网页</span>
+                        <span>{t("Open source URL", "打开原网页")}</span>
                         <ArrowUpRight size={14} />
                       </a>
                     ) : null}
@@ -374,7 +376,7 @@ export default function ScreeningRoom({
                 ) : (
                   <div className="screening-empty-media">
                     {target.kind === "video" ? <FilmStrip size={42} /> : <ImageSquare size={42} />}
-                    <p>暂无可用画面预览</p>
+                    <p>{t("No preview frame available", "暂无可用画面预览")}</p>
                   </div>
                 )}
               </div>
@@ -383,8 +385,8 @@ export default function ScreeningRoom({
               {timelineItems.length > 0 ? (
                 <div className="screening-filmstrip">
                   <div className="screening-strip-head">
-                    <span>KEYFRAME TIMELINE · {timelineItems.length} 帧</span>
-                    {target.kind === "video" ? <span className="strip-hint">点击任意帧跳转时间点</span> : null}
+                    <span>{t(`KEYFRAME TIMELINE · ${timelineItems.length} frames`, `KEYFRAME TIMELINE · ${timelineItems.length} 帧`)}</span>
+                    {target.kind === "video" ? <span className="strip-hint">{t("Click any frame to jump", "点击任意帧跳转时间点")}</span> : null}
                   </div>
                   <div className="screening-strip-track">
                     {timelineItems.map((frame) => {
@@ -417,14 +419,14 @@ export default function ScreeningRoom({
             <aside className="screening-inspector">
               <div className="inspector-block">
                 <div className="inspector-label">
-                  {target.kind === "video" ? "视频封面" : "资产封面"}
+                  {target.kind === "video" ? t("Video Cover", "视频封面") : t("Asset Cover", "资产封面")}
                 </div>
                 {videoCoverUrl ? (
                   <div className="inspector-cover-wrap">
-                    <img className="inspector-cover-img" src={videoCoverUrl} alt={`${target.title} 封面`} />
+                    <img className="inspector-cover-img" src={videoCoverUrl} alt={`${target.title} cover`} />
                   </div>
                 ) : (
-                  <span className="inspector-empty">暂无封面图</span>
+                  <span className="inspector-empty">{t("No cover image", "暂无封面图")}</span>
                 )}
                 <label className="inspector-upload-btn">
                   <input
@@ -435,17 +437,17 @@ export default function ScreeningRoom({
                     onChange={(e) => void handleUploadCover(e)}
                   />
                   <Plus size={12} />
-                  {coverBusy ? "上传中…" : "更换封面"}
+                  {coverBusy ? t("Uploading…", "上传中…") : t("Replace Cover", "更换封面")}
                 </label>
               </div>
 
               <div className="inspector-block">
-                <div className="inspector-label">描述与来源</div>
+                <div className="inspector-label">{t("Description & Source", "描述与来源")}</div>
                 <textarea
                   className="inspector-textarea"
                   rows={4}
                   value={description}
-                  placeholder="补充图片或视频描述（支持元数据文本检索）"
+                  placeholder={t("Add image or video description (searchable via metadata search)", "补充图片或视频描述（支持元数据文本检索）")}
                   onChange={(e) => {
                     setDescription(e.target.value);
                     setDescNotice(null);
@@ -458,13 +460,13 @@ export default function ScreeningRoom({
                     disabled={descBusy}
                     onClick={() => void handleSaveDescription()}
                   >
-                    {descBusy ? "保存中…" : "保存描述"}
+                    {descBusy ? t("Saving…", "保存中…") : t("Save Description", "保存描述")}
                   </button>
                   {descNotice ? <span className="inspector-saved">{descNotice}</span> : null}
                 </div>
                 {target.sourceUrl ? (
                   <a className="inspector-source-link" href={target.sourceUrl} target="_blank" rel="noreferrer">
-                    <span>打开原网页：{target.sourceUrl}</span>
+                    <span>{t("Open source", "打开原网页")}: {target.sourceUrl}</span>
                     <ArrowUpRight size={12} />
                   </a>
                 ) : null}
@@ -475,7 +477,12 @@ export default function ScreeningRoom({
                   <div className="inspector-label">SEMANTIC RELEVANCE</div>
                   <div className="inspector-score-row">
                     <strong>{target.score.toFixed(4)}</strong>
-                    <span>{hitMethodMap[target.hitSource || ""] || target.hitSource || "向量检索"}</span>
+                    <span>
+                      {(hitMethodMap[target.hitSource || ""] &&
+                        (lang === "zh" ? hitMethodMap[target.hitSource || ""][1] : hitMethodMap[target.hitSource || ""][0])) ||
+                        target.hitSource ||
+                        t("Vector Search", "向量检索")}
+                    </span>
                   </div>
                   <div className="inspector-score-bar">
                     <div
@@ -489,7 +496,7 @@ export default function ScreeningRoom({
               {target.subtitleExcerpt ? (
                 <div className="inspector-block">
                   <div className="inspector-label">
-                    <Subtitles size={13} /> 命中的台词 / 字幕片段
+                    <Subtitles size={13} /> {t("Matched Subtitle Cue", "命中的台词 / 字幕片段")}
                   </div>
                   <blockquote className="inspector-quote">“{target.subtitleExcerpt}”</blockquote>
                 </div>
@@ -499,24 +506,24 @@ export default function ScreeningRoom({
                 <div className="inspector-label">PROVENANCE & VECTOR SPACE</div>
                 <dl className="inspector-meta-list">
                   <div>
-                    <dt>资产编号</dt>
+                    <dt>{t("Asset ID", "资产编号")}</dt>
                     <dd className="mono">{target.assetId.slice(0, 12)}</dd>
                   </div>
                   {target.objectKey ? (
                     <div>
-                      <dt>存储对象</dt>
+                      <dt>{t("Object Key", "存储对象")}</dt>
                       <dd className="mono break">{target.objectKey}</dd>
                     </div>
                   ) : null}
                   {target.modelId ? (
                     <div>
-                      <dt>视觉模型</dt>
+                      <dt>{t("Vision Model", "视觉模型")}</dt>
                       <dd>{target.modelId}{target.dim ? ` (${target.dim}D)` : ""}</dd>
                     </div>
                   ) : null}
                   {target.collection ? (
                     <div>
-                      <dt>Milvus 集合</dt>
+                      <dt>{t("Milvus Collection", "Milvus 集合")}</dt>
                       <dd className="mono break">{target.collection}</dd>
                     </div>
                   ) : null}
@@ -526,7 +533,7 @@ export default function ScreeningRoom({
               {/* 标签读写 */}
               <div className="inspector-block">
                 <div className="inspector-label">
-                  <Tag size={13} /> 标签档案
+                  <Tag size={13} /> {t("Tags", "标签档案")}
                 </div>
                 <div className="inspector-tags">
                   {tags.length ? (
@@ -537,24 +544,24 @@ export default function ScreeningRoom({
                           type="button"
                           onClick={() => void handleRemoveTag(tag)}
                           disabled={tagBusy}
-                          aria-label={`移除标签 ${tag}`}
+                          aria-label={t(`Remove tag ${tag}`, `移除标签 ${tag}`)}
                         >
                           <X size={10} />
                         </button>
                       </span>
                     ))
                   ) : (
-                    <span className="inspector-empty">暂无标签</span>
+                    <span className="inspector-empty">{t("No tags", "暂无标签")}</span>
                   )}
                 </div>
                 <form className="inspector-tag-form" onSubmit={(e) => void handleAddTag(e)}>
                   <input
                     value={tagInput}
                     onChange={(e) => setTagInput(e.target.value)}
-                    placeholder="添加导演注释 / 标签..."
+                    placeholder={t("Add note / tag...", "添加导演注释 / 标签...")}
                     disabled={tagBusy}
                   />
-                  <button type="submit" disabled={tagBusy || !tagInput.trim()} aria-label="添加标签">
+                  <button type="submit" disabled={tagBusy || !tagInput.trim()} aria-label={t("Add tag", "添加标签")}>
                     <Plus size={13} weight="bold" />
                   </button>
                 </form>
@@ -564,7 +571,7 @@ export default function ScreeningRoom({
               {subtitleCues.length > 0 ? (
                 <div className="inspector-block">
                   <div className="inspector-label">
-                    <Play size={13} /> 关联字幕时间轴 ({subtitleCues.length})
+                    <Play size={13} /> {t("Subtitle Timeline", "关联字幕时间轴")} ({subtitleCues.length})
                   </div>
                   <div className="inspector-cues">
                     {subtitleCues.map((cue) => (

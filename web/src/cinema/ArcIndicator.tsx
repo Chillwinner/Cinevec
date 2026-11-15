@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { CaretLeft, CaretRight, FilmStrip, ImageSquare } from "@phosphor-icons/react";
+import { useI18n } from "../i18n";
 import { EASE } from "../motion";
 
 export type CinemaSlideMeta = {
@@ -27,6 +28,7 @@ export default function ArcIndicator({
   onNext: () => void;
   onSelectActive: () => void;
 }) {
+  const { t } = useI18n();
   if (!items.length) return null;
   const current = items[((activeIndex % items.length) + items.length) % items.length];
 
@@ -72,8 +74,8 @@ export default function ArcIndicator({
           type="button"
           className="arc-step-btn"
           onClick={onPrev}
-          aria-label="上一张"
-          title="上一张 (←)"
+          aria-label={t("Previous", "上一张")}
+          title={t("Previous (←)", "上一张 (←)")}
         >
           <CaretLeft size={14} weight="bold" />
         </button>
@@ -82,7 +84,7 @@ export default function ArcIndicator({
           type="button"
           className="arc-title-btn"
           onClick={onSelectActive}
-          title="点击进入放映室查看原片/详情 (Enter)"
+          title={t("Open Screening Room to inspect original / details (Enter)", "点击进入放映室查看原片/详情 (Enter)")}
         >
           <span className="arc-index-num tabular-nums">
             {String(((activeIndex % items.length) + items.length) % items.length + 1).padStart(2, "0")}
@@ -119,8 +121,8 @@ export default function ArcIndicator({
           type="button"
           className="arc-step-btn"
           onClick={onNext}
-          aria-label="下一张"
-          title="下一张 (→)"
+          aria-label={t("Next", "下一张")}
+          title={t("Next (→)", "下一张 (→)")}
         >
           <CaretRight size={14} weight="bold" />
         </button>

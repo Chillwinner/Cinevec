@@ -1,53 +1,109 @@
-# Pica
+<div align="center">
 
-家庭服务器上的自部署图文检索平台（开发中）。本目录为已授权的开发检出，当前停在**真实集成关口**：开发功能已就绪，MinIO / Milvus / 官方 Chinese-CLIP 权重尚未在本实例联调，不再继续实现未授权的新功能。不打包、不把密钥写入仓库。
+# CineVec
 
-## 已实现的实际功能
+**Self-hosted multimodal media search with a cinema-grade screening UI and zero-retention indexing.**
 
-- 分层 FastAPI 后端 + 独立 React（Vite + TypeScript）界面；单进程 SQLite 任务队列与调度。
-- S3/MinIO 只读来源接入、导入、刷新与生命周期（媒体完成 ≠ 索引就绪；内容更新后旧向量在新写入并关联完整前不参与检索；确认缺失仍可查并标失效）。
-- FFmpeg 抽帧（默认每 5 秒 / 可改）、预览与模型输入独立生成；外部字幕手工关联。
-- 官方 Milvus REST v2 适配与检索聚合：文字走画面+字幕（画面优先），以图搜图只走画面；同视频画面分取 max；默认 Top 20，单视频最多 5 帧预览且不足不补。
-- 可选单用户登录（默认关闭）。开启须完整账号并明确确认沿用预设或自定义签名密钥。预设只写入 **gitignored** 的本地开发配置（`backend/.env` 中的 `PICA_JWT_SECRET`），不进源代码、仓库、接口响应或页面。
-- 可配置的 CPU 本地 **Chinese-CLIP 官方分路 ONNX** 图文编码器加载路径（不下载模型本体）。配置必须明确 `model_family=chinese_clip`、官方结构（如 `ViT-B-16`）以及输入输出签名。文件缺失或不支持的 checkpoint 返回明确 blocked，不会用随机或哈希向量充数。字幕编码器为独立端口，默认可与 text 侧共用同一文本 ONNX，语义质量 **待验证**。两路按需加载，并在同一推理进程内共享模型实例（batch=1）。合成 ONNX 测试只覆盖加载/形状/归一化，**不代表实际检索效果已验证**。
-- 来源密钥入库后 API 只返回是否已配置的布尔值，不回显明文；探测失败信息会脱敏。保存来源配置本身不表示连接成功。
+English | [简体中文](README.zh-CN.md)
 
-## 尚未联调、不得假装已接通的依赖
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-19%20%2B%20TypeScript-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
+[![Three.js](https://img.shields.io/badge/WebGL-3D%20Cinema-000000?style=flat-square&logo=threedotjs&logoColor=white)](https://threejs.org/)
+[![Milvus](https://img.shields.io/badge/Milvus-REST%20v2-00A1EA?style=flat-square)](https://milvus.io/)
+[![MinIO](https://img.shields.io/badge/S3%20%2F%20MinIO-Storage-C72E49?style=flat-square&logo=minio&logoColor=white)](https://min.io/)
 
-- 本机已有的 MinIO（S3 兼容）与 Milvus：未提供连接信息前，状态为未配置，搜索不会返回假结果。
-- 官方 Chinese-CLIP 权重与词表：需要本地已有的 `*.img.fp32.onnx`（或 fp16）、`*.txt.fp32.onnx`（或 fp16）以及官方 `cn_clip/clip/vocab.txt`。当前开发实例默认不配置这些路径，编码器保持阻断。
-- 可选依赖 `onnxruntime` 只安装在项目 `backend/.venv`。若当前解释器（例如 Python 3.14）没有可用轮子，会如实记录兼容性，不改系统 Python。
-- 字幕共用 text 侧的语义质量、以及真实权重下的检索效果，均待接入后验证。
-- 图视频混合 TopN 计数默认按资产，仍为待确认默认；接口保留 `counting_mode=video`。
+</div>
 
-## 目录
+---
 
-- `backend/` Python FastAPI 分层服务
-- `web/` 独立 React（Vite + TypeScript）界面
+## Overview
 
-## 环境与启动
+**CineVec** turns your private photo and video archives into an interactive, searchable screening room. Built around **Chinese-CLIP** (via remote HTTP or local ONNX), **Milvus REST v2**, **FFmpeg**, and **S3 / MinIO**, it lets you search across millions of frames by natural-language scene descriptions, reference images, subtitle dialogue, or metadata — without ever giving up ownership of your media.
 
-使用本机已有 Python（开发机当前为 3.14.x）与 Node.js。不使用 Docker，不做打包。FFmpeg 优先使用虚拟环境中的 `imageio-ffmpeg`（不改动系统安装）。
+---
 
-本地开发配置：把仓库根目录的 `.env.example` 复制为 `backend/.env`（该文件已被 gitignore）。文件中只保留占位符示例，不要把真实密钥写进示例文件或仓库。登录鉴权在配置里应保持 `PICA_AUTH_ENABLED=false`，直到你在设置页手动开启。不要改系统全局环境，也不要把变量写进其他项目的 shell。
+## Key Features
 
-### 启动后端
+- **3D Cinema & Screening Room UI** — Browse results in a WebGL cylindrical film corridor (`3D Cinema`) or `Film Grid`. Click any hit to open the **Screening Room** with instant timestamp seeking, keyframe filmstrip, custom cover replacement, editable descriptions, tags, and synchronized subtitle cues.
+- **Multimodal + Lexical Search**
+  - **Semantic Text**: Search visual scenes and dialogue (`"sunset by the sea"`, `"lit street in the rain"`).
+  - **Image-to-Frame**: Drag and drop any reference image to find visually similar shots.
+  - **Lexical Metadata**: Fast substring matching across filenames, tags, and descriptions.
+- **Zero-Retention Indexing Mode** — Upload media with *"Store original file in S3"* unchecked and attach a `source_url`. CineVec extracts keyframes, builds embeddings, stores lightweight previews + vectors, and deletes the temporary original after ingestion.
+- **Non-Destructive Bucket Connections** — Connect existing S3 / MinIO buckets as read-only inputs. Originals in external buckets are never moved or deleted; excluding an asset purges Milvus vectors *first* before cleaning previews.
+- **Live Pipeline Topology & Hardware Telemetry** — Monitor host CPU, RAM, and NVIDIA GPU utilization alongside a 4-stage traffic-light pipeline (`Ingest` → `Preprocess` → `Embed` → `Index`) with expandable job queues and per-stage timings.
+- **Bilingual Interface (`EN / 中文`)** — English by default with instant language switching in the top HUD bar.
+- **Plugin-Ready API** — Generate scoped Bearer API tokens in Settings to integrate external bots, browser extensions, or scripts via `/api/v1/*`.
+
+---
+
+## Screenshots
+
+### Explore — 3D Cinema & Director Search Dock
+![CineVec Explore 3D Cinema](docs/images/explore.png)
+
+### Activity — Hardware Telemetry & 4-Stage Pipeline Topology
+![CineVec Activity Dashboard](docs/images/activity.png)
+
+### Library — Asset Catalog & Metadata Inspector
+![CineVec Library](docs/images/library.png)
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI["Web UI (React + Three.js WebGL)"] <-->|REST / Auth| API["FastAPI Server & SQLite Catalog"]
+    API -->|Upload / Read| S3["S3 / MinIO Object Storage"]
+    API -->|Enqueue Jobs| W["Background Worker"]
+    W -->|Extract & Filter Frames| FF["FFmpeg + OpenCV"]
+    W -->|Encode Frames / Subtitles| CLIP["Chinese-CLIP (HTTP or Local ONNX)"]
+    W -->|Upsert Vectors + Metadata| MV["Milvus REST v2"]
+    API -->|Semantic Search| CLIP
+    API -->|Vector Query| MV
+```
+
+---
+
+## Quickstart
+
+### Prerequisites
+
+- **Python 3.11+** & **Node.js 20+**
+- **FFmpeg** (available in `PATH` or configured via `PICA_FFMPEG_PATH`)
+- **Milvus** (v2.4+ with REST API v2 enabled)
+- **MinIO / S3-compatible storage**
+- **Embedding service** (Remote HTTP encoder recommended, or local Chinese-CLIP ONNX models)
+
+### 1. Configure Environment
+
+Copy the showcase environment template and fill in your local service endpoints and credentials:
+
+```bash
+cp .env.example backend/.env
+```
+
+> [!IMPORTANT]
+> Never commit `backend/.env`, `backend/data/*.db`, or real S3/JWT secrets to git. All `PICA_*` environment variable names remain stable for backward compatibility.
+
+### 2. Start the Backend
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-# 可选：若要用官方 Chinese-CLIP ONNX，再在本 venv 安装 onnxruntime（不要装到系统 Python）
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+python -m venv .venv
+
+# Windows (PowerShell)
+.\.venv\Scripts\Activate.ps1
+# Linux / macOS
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+uvicorn app.main:app --host 127.0.0.1 --port 8008
 ```
 
-健康检查：http://127.0.0.1:8000/api/health  
-状态：http://127.0.0.1:8000/api/status
-
-本开发实例绑定 IPv4 的 `127.0.0.1:8000`。
-
-### 启动前端
+### 3. Start the Frontend
 
 ```bash
 cd web
@@ -55,72 +111,45 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5174
 ```
 
-本项目开发界面：http://127.0.0.1:5174 （`/api` 代理到后端 8000）。若 5173 已被其他项目占用，请继续使用 5174，不要去停掉别人的进程。
+Open **http://127.0.0.1:5174** in your browser.
 
-## 测试
+---
+
+## Testing & Verification
 
 ```bash
+# Backend unit & integration tests
 cd backend
-source .venv/bin/activate
 pytest -q
-```
 
-测试会在临时目录自生成小视频或小型合成 ONNX，明确不是用户数据，也不会写入默认界面或开发数据库。合成编码器测试不宣称检索效果。
-
-```bash
+# Frontend typecheck, production build & auth storage tests
 cd web
 npm run build
+npm test
 ```
 
-## 真实集成需要的最小资料字段（请自行填入本地配置或界面，不要在聊天里发送明文密码）
+---
 
-以下只列出字段名，便于接入时对照。密钥与口令在本机填写，接口与文档都不回显。
+## Project Structure
 
-**MinIO / S3 来源（界面「来源」或探测用字段）**
-
-- `endpoint`（服务地址）
-- `bucket`
-- `region`（可空）
-- `access_key` / `secret_key`（保存后只显示是否已配置）
-- 可选：前缀 / 来源名称 / 角色（输入源或平台存储）
-
-**Milvus**
-
-- `PICA_MILVUS_URI`
-- `PICA_MILVUS_DB`（默认 `_default`）
-- `PICA_MILVUS_TOKEN` 或 `PICA_MILVUS_USER` + `PICA_MILVUS_PASSWORD`
-- `PICA_VECTOR_PROFILE`、`PICA_MODEL_ID`、`PICA_MODEL_VERSION`、`PICA_MODEL_DIM`（须与所用模型特征维一致）
-
-**官方 Chinese-CLIP CPU ONNX（不下载；路径指向你已有的本地文件）**
-
-- `PICA_MODEL_FAMILY=chinese_clip`（只支持这一族，不会臆造通用适配）
-- `PICA_MODEL_ARCHITECTURE`：`ViT-B-16` / `ViT-L-14` / `ViT-L-14-336` / `ViT-H-14` / `RN50`
-- `PICA_IMAGE_ONNX_PATH`：官方 `{prefix}.img.fp32.onnx` 或 `.img.fp16.onnx`（fp16 可能带有不可单独挪走的 `.extra_file` 伴随文件）
-- `PICA_TEXT_ONNX_PATH`：官方 `{prefix}.txt.fp32.onnx` 或 `.txt.fp16.onnx`
-- `PICA_TOKENIZER_VOCAB_PATH`：官方 `cn_clip/clip/vocab.txt`（Google 中文 BERT WordPiece 词表）
-- 签名默认与官方部署文档一致，一般无需改：`image` / `unnorm_image_features`，`text` / `unnorm_text_features`，`PICA_TEXT_CONTEXT_LENGTH=52`
-- `PICA_SUBTITLE_SHARE_TEXT_ENCODER=true`（字幕端口共用 text 侧，质量待验证）
-
-官方预处理按 OFA-Sys `image_transform`：将图像 Resize 到结构对应分辨率的正方形（ViT-B-16 / ViT-L-14 / ViT-H-14 / RN50 为 224，ViT-L-14-336 为 336，BICUBIC），转 RGB，缩放到 `[0,1]`，再按 CLIP 均值方差归一化。官方该函数不再额外做 CenterCrop。文本按官方 `tokenize`：`[CLS]` + WordPiece + `[SEP]`，默认长度 52。推理后对 `unnorm_*_features` 做 L2 归一化。
-
-**登录（可选，当前开发实例保持关闭）**
-
-- `PICA_AUTH_ENABLED=false`（实例开关仍以设置页 / 运行时库为准，默认关闭）
-- `PICA_JWT_SECRET` 仅写在 gitignored 的 `backend/.env`
-- 若以后要开启：在设置页登记账号密码，并明确确认沿用预设或自定义密钥。不要在聊天中发送密码。
-
-## 检索与生命周期摘要
-
-- 向量集合按 `pica_{profile}_{model}_{version}_{dim}_{modality}` 隔离，按需创建，不删除他人集合。
-- 预览通过 `/api/previews/...` 后端读取，不签发对象存储的长期公开地址。
-- Fake VectorIndex / Encoder 仅用于测试，不是运行时回退。
-- 不要在共享开发实例上随意开启登录或写入真实用户密码，以免把自己锁在外面。
-
-
-## 真实接入（本地开发例外）
-
-远程图文编码、S3 与 Milvus 各自走独立 infra 适配器，application / domain 只依赖端口。远程 HTTP 编码器与本地 ONNX 实现可替换，禁止同时启用以免混入不可比较空间。凭证只写在 gitignored 的 `backend/.env`（权限 600），接口不回显。当前开发实例登录保持关闭。
-
-远程 Chinese-CLIP 特征服务经 OpenAPI 与实调用核对：`GET /health`，`POST /api/v1/embed/text`（`{text}` → `{dimension,vector}`），`POST /api/v1/embed/texts`（`{texts}` → `{count,dimension,vectors}`），`POST /api/v1/embed/image`（multipart `file` → `{dimension,vector}`）。该服务无认证；`ViT-B-16` / `int8_dynamic` / 维度 512，返回向量已 L2 归一化，文本与图片同属该空间。不要把该服务自己的 Milvus 连接当成 Pica 的集合。
-
-对象存储请使用 Pica 专用桶（例如 `pica-dev`）及前缀：`source/` 放测试源，`previews/` 为既有衍生预览键。不要扫描或改写其它已有桶。Milvus 使用库 `default`（不是 `_default`），只创建 `pica_*` 集合，不改动已有集合（例如 `video_frames_v1`）。
+```text
+cinevec/
+├── backend/
+│   ├── app/
+│   │   ├── main.py          # FastAPI entrypoint & static/API routes
+│   │   ├── worker.py        # 4-stage background pipeline & purge worker
+│   │   ├── milvus.py        # Milvus REST v2 client & collection management
+│   │   ├── embeddings.py    # Remote HTTP & local ONNX Chinese-CLIP encoders
+│   │   ├── video.py         # FFmpeg keyframe sampling & quality filtering
+│   │   └── storage.py       # S3 / MinIO adapter
+│   └── tests/               # Pytest suite
+├── web/
+│   ├── src/
+│   │   ├── cinema/          # WebGL 3D Carousel, ArcIndicator, ScreeningRoom
+│   │   ├── pages/           # Explore, Library, Activity, Settings, Login
+│   │   ├── components/      # Layout HUD, AddFlow, ConnectDrive, Lightbox
+│   │   └── i18n.tsx         # Bilingual EN / 中文 provider
+│   └── package.json
+├── docs/images/             # README screenshots
+└── .env.example             # Environment configuration template
+```

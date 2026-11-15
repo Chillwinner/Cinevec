@@ -2,9 +2,11 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { ArrowsClockwise, Sparkle } from "@phosphor-icons/react";
 import { api } from "../api";
+import { useI18n } from "../i18n";
 import { softSpring } from "../motion";
 
 export default function RebuildFab() {
+  const { t } = useI18n();
   const [mismatch, setMismatch] = useState(0);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +42,7 @@ export default function RebuildFab() {
       await load();
     } catch (err) {
       setRunning(false);
-      setError(err instanceof Error ? err.message : "没排上重算");
+      setError(err instanceof Error ? err.message : t("Failed to queue re-index", "没排上重算"));
     }
   }
 
@@ -56,7 +58,7 @@ export default function RebuildFab() {
         <span className={`fab-icon${running ? " spinning" : ""}`}>
           {running ? <ArrowsClockwise size={16} /> : <Sparkle size={16} weight="fill" />}
         </span>
-        {running ? "正在重算" : "用新模型重新算"}
+        {running ? t("Re-indexing…", "正在重算") : t("Re-index with active model", "用新模型重新算")}
       </button>
     </motion.div>
   );

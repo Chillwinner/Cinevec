@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-const SESSION_PRELOADED_KEY = "pica.cinema.preloaded";
+const SESSION_PRELOADED_KEY = "cinevec.cinema.preloaded";
 
 function DigitColumn({ targetDigit, delayMs }: { targetDigit: number; delayMs: number }) {
   return (
@@ -94,7 +94,7 @@ export default function Preloader({
         <motion.div
           className="cinema-preloader"
           role="progressbar"
-          aria-label="正在加载 Pica 影院档案"
+          aria-label="Loading CineVec Cinema Archive"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={progress}
@@ -127,7 +127,7 @@ export default function Preloader({
             <DigitColumn targetDigit={d2} delayMs={80} />
           </div>
 
-          <p className="preloader-sub">PICA · PRIVATE CINEMA ARCHIVE</p>
+          <p className="preloader-sub">CINEVEC · PRIVATE CINEMA ARCHIVE</p>
         </motion.div>
       ) : null}
     </AnimatePresence>

@@ -4,23 +4,25 @@ import { AnimatePresence, motion } from "motion/react";
 import { SignOut } from "@phosphor-icons/react";
 import { useAuth } from "../AuthContext";
 import { api } from "../api";
+import { useI18n } from "../i18n";
 import { EASE } from "../motion";
 import AboutSystemDrawer from "../cinema/AboutSystemDrawer";
 import Preloader from "../cinema/Preloader";
 import RebuildFab from "./RebuildFab";
 import type { SystemStatus } from "../types";
 
-const links = [
-  { to: "/", label: "探索", end: true },
-  { to: "/library", label: "资料库", end: false },
-  { to: "/activity", label: "仪表盘", end: false },
-  { to: "/settings", label: "设置", end: false },
-];
-
 export default function Layout() {
   const outlet = useOutlet();
   const location = useLocation();
   const { auth, username, ready: authReady, logout } = useAuth();
+  const { lang, toggleLang, t } = useI18n();
+
+  const links = [
+    { to: "/", label: t("Explore", "探索"), end: true },
+    { to: "/library", label: t("Library", "资料库"), end: false },
+    { to: "/activity", label: t("Activity", "仪表盘"), end: false },
+    { to: "/settings", label: t("Settings", "设置"), end: false },
+  ];
 
   const [aboutOpen, setAboutOpen] = useState(false);
   const [status, setStatus] = useState<SystemStatus | null>(null);
@@ -68,11 +70,11 @@ export default function Layout() {
       <header className="cinema-hud-bar">
         <NavLink to="/" className="cinema-brand" end>
           <span className={`cinema-brand-dot${engineOnline ? " online" : ""}`} />
-          <span className="cinema-brand-name">PICA</span>
+          <span className="cinema-brand-name">CINEVEC</span>
           <span className="cinema-brand-sub">CINEMA ARCHIVE</span>
         </NavLink>
 
-        <nav className="cinema-nav" aria-label="主导航">
+        <nav className="cinema-nav" aria-label={t("Main navigation", "主导航")}>
           {links.map((item) => (
             <NavLink
               key={item.to}
@@ -91,12 +93,22 @@ export default function Layout() {
               type="button"
               className="cinema-hud-user"
               onClick={logout}
-              title={`当前账户: ${username}（点击退出）`}
+              title={t(`Signed in as: ${username} (click to sign out)`, `当前账户: ${username}（点击退出）`)}
             >
               <span>{username}</span>
               <SignOut size={13} />
             </button>
           ) : null}
+
+          <button
+            type="button"
+            className="cinema-about-btn"
+            onClick={toggleLang}
+            title={t("Switch to Chinese", "切换到 English")}
+            aria-label={t("Switch language", "切换语言")}
+          >
+            {lang === "en" ? "中文" : "EN"}
+          </button>
 
           <button
             type="button"

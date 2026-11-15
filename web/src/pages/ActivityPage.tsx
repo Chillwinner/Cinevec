@@ -4,14 +4,15 @@ import { Link } from "react-router-dom";
 import { ArrowsClockwise, CaretDown, CaretUp, Cpu, GraphicsCard, Memory, X } from "@phosphor-icons/react";
 import { api } from "../api";
 import { AnimatedNumber, Banner, PageHead, Pill } from "../components/ui";
+import { useI18n } from "../i18n";
 import { EASE, spring } from "../motion";
 import type { DashboardResponse, DashboardStage, JobCard, ResourceBlock } from "../types";
 
 const COLUMNS = [
-  { id: "register", label: "登记" },
-  { id: "preprocess", label: "预处理" },
-  { id: "encode", label: "向量编码" },
-  { id: "index_write", label: "写入索引" },
+  { id: "register", labelEn: "Ingest", labelZh: "登记" },
+  { id: "preprocess", labelEn: "Preprocess", labelZh: "预处理" },
+  { id: "encode", labelEn: "Embed", labelZh: "向量编码" },
+  { id: "index_write", labelEn: "Index", labelZh: "写入索引" },
 ] as const;
 
 type StageId = (typeof COLUMNS)[number]["id"];
@@ -79,6 +80,7 @@ function stageTrafficLevel(counts: ReturnType<typeof stageCounts>): "clear" | "b
 }
 
 function JobCardView({ job, onRetry }: { job: JobCard; onRetry: (id: string) => void }) {
+  const { lang, t } = useI18n();
   return (
     <motion.article
       layout
@@ -89,18 +91,18 @@ function JobCardView({ job, onRetry }: { job: JobCard; onRetry: (id: string) => 
       transition={{ duration: 0.3, ease: EASE, layout: spring }}
     >
       <div className="queue-card-head">
-        <strong>{fileName(job)}</strong>
+        <strong>{fileName(job, lang)}</strong>
         <Pill status={job.status === "failed" ? "warn" : job.status === "completed" ? "ok" : "info"}>
-          {statusLabel(job)}
+          {statusLabel(job, lang)}
         </Pill>
       </div>
       <p className="hint">
         {job.step || job.stage}
-        {job.elapsed_seconds != null ? ` · 合计 ${job.elapsed_seconds.toFixed(2)}s` : ""}
+        {job.elapsed_seconds != null ? ` · ${t("Total", "合计")} ${job.elapsed_seconds.toFixed(2)}s` : ""}
       </p>
       {job.error_message ? <p className="hint topology-job-err">{job.error_message}</p> : null}
       {job.timings && Object.keys(job.timings).length ? (
-        <p className="hint timing-line">{formatTimings(job.timings)}</p>
+        <p className="hint timing-line">{formatTimings(job.timings, lang)}</p>
       ) : null}
       {job.progress ? (
         <div className="progress">
@@ -112,63 +114,69 @@ function JobCardView({ job, onRetry }: { job: JobCard; onRetry: (id: string) => 
         </div>
       ) : null}
       <div className="queue-actions">
-        {job.asset_id ? <Link className="btn ghost" to={`/library?id=${job.asset_id}`}>资料</Link> : null}
-        {job.can_retry ? <button type="button" className="btn" onClick={() => onRetry(job.id)}>重试</button> : null}
+        {job.asset_id ? <Link className="btn ghost" to={`/library?id=${job.asset_id}`}>{t("Asset", "资料")}</Link> : null}
+        {job.can_retry ? <button type="button" className="btn" onClick={() => onRetry(job.id)}>{t("Retry", "重试")}</button> : null}
       </div>
     </motion.article>
   );
 }
 
-function statusLabel(job: JobCard): string {
-  if (job.job_type === "register_asset" && job.status === "completed") return "仅登记完成";
-  const labels: Record<JobCard["status"], string> = {
-    waiting: "排队",
-    running: "正在处理",
-    paused: "已暂停",
-    blocked: "还差检索这一步",
-    completed: "可以搜了",
-    failed: "失败",
+function statusLabel(job: JobCard, lang: "en" | "zh"): string {
+  if (job.job_type === "register_asset" && job.status === "completed") {
+    return lang === "zh" ? "仅登记完成" : "Registered";
+  }
+  const labels: Record<JobCard["status"], [string, string]> = {
+    waiting: ["Queued", "排队"],
+    running: ["Running", "正在处理"],
+    paused: ["Paused", "已暂停"],
+    blocked: ["Pending Index", "还差检索这一步"],
+    completed: ["Searchable", "可以搜了"],
+    failed: ["Failed", "失败"],
   };
-  return labels[job.status];
+  const pair = labels[job.status];
+  return lang === "zh" ? pair[1] : pair[0];
 }
 
-function fileName(job: JobCard) {
-  return String(job.object_key || job.asset_id || "文件").split(/[\\/]/).pop() || "文件";
+function fileName(job: JobCard, lang: "en" | "zh") {
+  const fallback = lang === "zh" ? "文件" : "File";
+  return String(job.object_key || job.asset_id || fallback).split(/[\\/]/).pop() || fallback;
 }
 
-const TIMING_LABELS: Record<string, string> = {
-  download: "下载",
-  decode: "解码",
-  preview: "预览",
-  model_input: "模型输入",
-  model_input_render: "模型PNG编码",
-  model_input_put: "模型PNG写入",
-  model_input_file: "模型PNG",
-  frame_meta: "帧记录",
-  encode: "编码合计",
-  encode_fetch: "取模型输入",
-  encode_http: "编码器HTTP",
-  encode_remote: "编码器内部",
-  index_write: "写向量库",
-  associate: "关联",
-  activate: "激活",
+const TIMING_LABELS: Record<string, [string, string]> = {
+  download: ["Download", "下载"],
+  decode: ["Decode", "解码"],
+  preview: ["Preview", "预览"],
+  model_input: ["Model Input", "模型输入"],
+  model_input_render: ["Model PNG", "模型PNG编码"],
+  model_input_put: ["Write PNG", "模型PNG写入"],
+  model_input_file: ["Model PNG", "模型PNG"],
+  frame_meta: ["Frame Meta", "帧记录"],
+  encode: ["Encode Total", "编码合计"],
+  encode_fetch: ["Fetch Input", "取模型输入"],
+  encode_http: ["Encoder HTTP", "编码器HTTP"],
+  encode_remote: ["Encoder Internal", "编码器内部"],
+  index_write: ["Vector Write", "写向量库"],
+  associate: ["Associate", "关联"],
+  activate: ["Activate", "激活"],
 };
 
-function formatTimings(timings: NonNullable<JobCard["timings"]>) {
+function formatTimings(timings: NonNullable<JobCard["timings"]>, lang: "en" | "zh") {
+  const isZh = lang === "zh";
   return Object.entries(timings)
     .map(([key, value]) => {
-      const bits = [TIMING_LABELS[key] || key];
+      const labelPair = TIMING_LABELS[key];
+      const bits = [labelPair ? (isZh ? labelPair[1] : labelPair[0]) : key];
       if (value.seconds != null) bits.push(`${value.seconds.toFixed(2)}s`);
-      if (value.http_seconds != null) bits.push(`往返 ${value.http_seconds.toFixed(2)}s`);
-      if (value.queue_seconds != null) bits.push(`排队 ${value.queue_seconds.toFixed(2)}s`);
-      if (value.preprocess_seconds != null) bits.push(`预处理 ${value.preprocess_seconds.toFixed(2)}s`);
-      if (value.inference_seconds != null) bits.push(`推理 ${value.inference_seconds.toFixed(2)}s`);
-      if (value.processed_width && value.processed_height) bits.push(`模型输入 ${value.processed_width}×${value.processed_height}`);
+      if (value.http_seconds != null) bits.push(`${isZh ? "往返" : "RTT"} ${value.http_seconds.toFixed(2)}s`);
+      if (value.queue_seconds != null) bits.push(`${isZh ? "排队" : "Queue"} ${value.queue_seconds.toFixed(2)}s`);
+      if (value.preprocess_seconds != null) bits.push(`${isZh ? "预处理" : "Pre"} ${value.preprocess_seconds.toFixed(2)}s`);
+      if (value.inference_seconds != null) bits.push(`${isZh ? "推理" : "Infer"} ${value.inference_seconds.toFixed(2)}s`);
+      if (value.processed_width && value.processed_height) bits.push(`${isZh ? "模型输入" : "Input"} ${value.processed_width}×${value.processed_height}`);
       if (value.device) bits.push(String(value.device));
       if (value.width && value.height) bits.push(`${value.width}×${value.height}`);
       if (value.bytes != null) bits.push(`${Math.round(value.bytes / 1024)}KB`);
       if (value.request_bytes != null && value.bytes == null) bits.push(`${Math.round(value.request_bytes / 1024)}KB`);
-      if (value.remote_split === false) bits.push("服务端未拆分");
+      if (value.remote_split === false) bits.push(isZh ? "服务端未拆分" : "unsplit");
       return bits.join(" ");
     })
     .join(" · ");
@@ -213,6 +221,7 @@ function Gauge({
   icon: ReactNode;
   delay: number;
 }) {
+  const { t } = useI18n();
   const known = percent != null && !Number.isNaN(percent);
   const value = known ? Math.max(0, Math.min(100, percent)) : 0;
   const tone = value > 85 ? "var(--danger)" : value > 60 ? "var(--warn)" : "var(--accent)";
@@ -228,7 +237,7 @@ function Gauge({
           {icon}
           {label}
         </span>
-        <span className={`gauge-state${known ? " on" : ""}`}>{known ? "实时" : "暂无"}</span>
+        <span className={`gauge-state${known ? " on" : ""}`}>{known ? t("Live", "实时") : t("N/A", "暂无")}</span>
       </div>
 
       <div className="gauge-value">
@@ -259,7 +268,7 @@ function Gauge({
         ) : null}
       </svg>
 
-      <p className="gauge-sub">{known ? sub : sub || "这台机器暂时没有这项数据"}</p>
+      <p className="gauge-sub">{known ? sub : sub || t("No telemetry available on this host", "这台机器暂时没有这项数据")}</p>
     </motion.div>
   );
 }
@@ -310,6 +319,7 @@ function ActivitySkeleton() {
 }
 
 export default function ActivityPage() {
+  const { lang, t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const [dash, setDash] = useState<DashboardResponse | null>(null);
   const [selectedStageId, setSelectedStageId] = useState<StageId | null>(null);
@@ -320,7 +330,7 @@ export default function ActivityPage() {
       setDash(await api.dashboard());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "进度读不出来");
+      setError(err instanceof Error ? err.message : t("Failed to load dashboard", "进度读不出来"));
     }
   }
 
@@ -356,12 +366,12 @@ export default function ActivityPage() {
     ? Math.round(resources.pica_process.rss_bytes / 1048576)
     : null;
   const cpuSub = cpuPercent != null && cpu?.loadavg
-    ? `1 分钟负载 ${cpu.loadavg[0].toFixed(2)}`
+    ? t(`1m load ${cpu.loadavg[0].toFixed(2)}`, `1 分钟负载 ${cpu.loadavg[0].toFixed(2)}`)
     : cpuPercent != null && cpu?.logical_cpus
-      ? `${cpu.logical_cpus} 逻辑核心${picaRssMb != null ? ` · Pica ${picaRssMb} MB` : ""}`
+      ? `${cpu.logical_cpus} ${t("logical cores", "逻辑核心")}${picaRssMb != null ? ` · CineVec ${picaRssMb} MB` : ""}`
       : cpu?.message;
   const ramSub = ramPercent != null && mem?.used_bytes != null
-    ? `${(mem.used_bytes / 1073741824).toFixed(1)}${mem.total_bytes ? ` / ${(mem.total_bytes / 1073741824).toFixed(1)}` : ""} GB 已用`
+    ? `${(mem.used_bytes / 1073741824).toFixed(1)}${mem.total_bytes ? ` / ${(mem.total_bytes / 1073741824).toFixed(1)}` : ""} GB ${t("used", "已用")}`
     : mem?.message;
   const primaryGpu = gpu?.devices?.[0];
   const gpuVram = primaryGpu?.memory_used_mib != null && primaryGpu?.memory_total_mib != null
@@ -375,10 +385,10 @@ export default function ActivityPage() {
     const scan = dash?.stages.find((s) => s.id === "scan");
     const cleanup = dash?.stages.find((s) => s.id === "cleanup");
     const bits = [];
-    if (scan && scan.total) bits.push(`扫描 ${scan.total}`);
-    if (cleanup && cleanup.total) bits.push(`清理 ${cleanup.total}`);
+    if (scan && scan.total) bits.push(`${t("Scan", "扫描")} ${scan.total}`);
+    if (cleanup && cleanup.total) bits.push(`${t("Cleanup", "清理")} ${cleanup.total}`);
     return bits.join(" · ");
-  }, [dash]);
+  }, [dash, t]);
 
   const stageById = useMemo(() => {
     const map: Record<string, DashboardStage | undefined> = {};
@@ -398,20 +408,24 @@ export default function ActivityPage() {
     () => sortJobs(selectedStageData?.jobs ?? []),
     [selectedStageData],
   );
+  const colLabel = (col: (typeof COLUMNS)[number]) => (lang === "zh" ? col.labelZh : col.labelEn);
 
   return (
     <div>
       <PageHead
         eyebrow="ACTIVITY"
-        title="仪表盘"
-        desc="上面看这台机器忙不忙，下面节点与连线展示各阶段实时负载，点击任意阶段查看完整任务明细。"
+        title={t("Activity", "仪表盘")}
+        desc={t(
+          "Live host telemetry above; click any pipeline stage or line below to inspect queued and completed jobs.",
+          "上面看这台机器忙不忙，下面节点与连线展示各阶段实时负载，点击任意阶段查看完整任务明细。",
+        )}
         actions={
           <div className="live-actions">
             <span className="live-chip">
               <span className="live-dot" />
-              每 2 秒自动刷新
+              {t("Auto-refresh 2s", "每 2 秒自动刷新")}
             </span>
-            <button type="button" className="icon-btn" onClick={() => void load()} aria-label="立即刷新">
+            <button type="button" className="icon-btn" onClick={() => void load()} aria-label={t("Refresh now", "立即刷新")}>
               <ArrowsClockwise size={16} />
             </button>
           </div>
@@ -421,7 +435,7 @@ export default function ActivityPage() {
       <AnimatePresence>
         {error ? (
           <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <Banner kind="danger" title="没做成">{error}</Banner>
+            <Banner kind="danger" title={t("Error", "没做成")}>{error}</Banner>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -463,12 +477,12 @@ export default function ActivityPage() {
             <div className="topology-head">
               <div className="topology-head-left">
                 <span className="topology-head-hint">
-                  处理流水线 · 点击阶段图标或连线查看详情
+                  {t("Pipeline · Click any stage icon or line for details", "处理流水线 · 点击阶段图标或连线查看详情")}
                 </span>
-                <span className="traffic-legend" aria-label="路线拥堵图例">
-                  <span className="traffic-legend-item"><i className="traffic-dot clear" />畅通</span>
-                  <span className="traffic-legend-item"><i className="traffic-dot busy" />进行中 (1–4)</span>
-                  <span className="traffic-legend-item"><i className="traffic-dot congested" />拥堵 (≥5)</span>
+                <span className="traffic-legend" aria-label={t("Traffic legend", "路线拥堵图例")}>
+                  <span className="traffic-legend-item"><i className="traffic-dot clear" />{t("Clear", "畅通")}</span>
+                  <span className="traffic-legend-item"><i className="traffic-dot busy" />{t("Active (1–4)", "进行中 (1–4)")}</span>
+                  <span className="traffic-legend-item"><i className="traffic-dot congested" />{t("Congested (≥5)", "拥堵 (≥5)")}</span>
                 </span>
               </div>
               <div className="topology-head-actions">
@@ -478,7 +492,7 @@ export default function ActivityPage() {
                     className="btn ghost"
                     onClick={() => setSelectedStageId(null)}
                   >
-                    收起详情
+                    {t("Collapse", "收起详情")}
                   </button>
                 ) : null}
                 <button
@@ -491,19 +505,20 @@ export default function ActivityPage() {
                 >
                   {expandAll ? (
                     <>
-                      收起全部 <CaretUp size={13} />
+                      {t("Collapse all", "收起全部")} <CaretUp size={13} />
                     </>
                   ) : (
                     <>
-                      展开全部 <CaretDown size={13} />
+                      {t("Expand all", "展开全部")} <CaretDown size={13} />
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            <div className="topology-track" role="region" aria-label="四阶段处理流水线拓扑图">
+            <div className="topology-track" role="region" aria-label={t("Four-stage pipeline topology", "四阶段处理流水线拓扑图")}>
               {COLUMNS.map((col, idx) => {
+                const label = colLabel(col);
                 const counts = stageCounts(stageById[col.id]);
                 const isSelected = !expandAll && selectedStageId === col.id;
                 const traffic = stageTrafficLevel(counts);
@@ -514,19 +529,19 @@ export default function ActivityPage() {
                       className={`topology-node traffic-${traffic}${isSelected ? " is-selected" : ""}`}
                       onClick={() => toggleStage(col.id)}
                       aria-expanded={isSelected || expandAll}
-                      title={`${col.label}（点击查看完整信息）`}
+                      title={t(`${label} (click for full details)`, `${label}（点击查看完整信息）`)}
                     >
                       <span className="topology-icon-wrap">
                         <StageWireIcon id={col.id} />
                       </span>
                       <span className="topology-node-label">
                         <span className="topology-index">{String(idx + 1).padStart(2, "0")}</span>
-                        {col.label}
+                        {label}
                       </span>
                       <span className="topology-node-sub">
                         {counts.failed > 0
-                          ? `失败 ${counts.failed} · 完成 ${counts.completed}`
-                          : `完成 ${counts.completed}`}
+                          ? t(`Failed ${counts.failed} · Done ${counts.completed}`, `失败 ${counts.failed} · 完成 ${counts.completed}`)
+                          : t(`Done ${counts.completed}`, `完成 ${counts.completed}`)}
                       </span>
                     </button>
 
@@ -534,19 +549,19 @@ export default function ActivityPage() {
                       type="button"
                       className={`topology-connector traffic-${traffic}${isSelected ? " is-selected" : ""}${counts.running > 0 ? " has-running" : ""}${counts.waiting > 0 ? " has-waiting" : ""}`}
                       onClick={() => toggleStage(col.id)}
-                      aria-label={`${col.label}阶段：${counts.running} 正在执行，${counts.waiting} 正在等待`}
+                      aria-label={t(`${label}: ${counts.running} running, ${counts.waiting} waiting`, `${label}阶段：${counts.running} 正在执行，${counts.waiting} 正在等待`)}
                       aria-expanded={isSelected || expandAll}
                     >
                       <span className="topology-metric up">
                         <span className="topology-arrow" aria-hidden="true">↑</span>
                         <span className="topology-num">{counts.running}</span>
-                        <span className="topology-unit">正在执行</span>
+                        <span className="topology-unit">{t("Running", "正在执行")}</span>
                       </span>
 
                       <span className="topology-rail" aria-hidden="true">
                         <span className="topology-dots" />
                         <span className="topology-line">
-                          <span className="topology-stage-tag">{col.label}</span>
+                          <span className="topology-stage-tag">{label}</span>
                         </span>
                         <span className="topology-dots" />
                       </span>
@@ -554,7 +569,7 @@ export default function ActivityPage() {
                       <span className="topology-metric down">
                         <span className="topology-arrow" aria-hidden="true">↓</span>
                         <span className="topology-num">{counts.waiting}</span>
-                        <span className="topology-unit">正在等待</span>
+                        <span className="topology-unit">{t("Waiting", "正在等待")}</span>
                       </span>
                     </button>
                   </div>
@@ -566,7 +581,7 @@ export default function ActivityPage() {
                 className={`topology-node topology-terminal${!expandAll && selectedStageId === "index_write" ? " is-selected" : ""}`}
                 onClick={() => toggleStage("index_write")}
                 aria-expanded={(!expandAll && selectedStageId === "index_write") || expandAll}
-                title="检索就绪总数（点击查看写入索引明细）"
+                title={t("Total ready items (click to inspect Index stage)", "检索就绪总数（点击查看写入索引明细）")}
               >
                 <span className="topology-monitor-frame">
                   <svg viewBox="0 0 88 64" className="topology-monitor-svg" aria-hidden="true">
@@ -575,11 +590,11 @@ export default function ActivityPage() {
                   </svg>
                   <span className="topology-monitor-value">
                     <strong>{readyCount}</strong>
-                    <small>项</small>
+                    <small>{t("items", "项")}</small>
                   </span>
                 </span>
-                <span className="topology-node-label">检索就绪</span>
-                <span className="topology-node-sub">可搜 / 已完成</span>
+                <span className="topology-node-label">{t("Ready", "检索就绪")}</span>
+                <span className="topology-node-sub">{t("Searchable / Done", "可搜 / 已完成")}</span>
               </button>
             </div>
           </motion.section>
@@ -597,20 +612,20 @@ export default function ActivityPage() {
                 <header className="topology-detail-head">
                   <div className="topology-detail-title">
                     <span className="queue-index">{String(selectedStageIdx + 1).padStart(2, "0")}</span>
-                    <h3>{selectedStageCol.label}</h3>
+                    <h3>{colLabel(selectedStageCol)}</h3>
                     <span className="queue-count">{selectedCounts.total}</span>
                   </div>
                   <div className="topology-detail-badges">
                     <Pill status={selectedCounts.running > 0 ? "info" : "ok"}>
-                      正在执行 {selectedCounts.running}
+                      {t("Running", "正在执行")} {selectedCounts.running}
                     </Pill>
                     <Pill status={selectedCounts.waiting > 0 ? "warn" : "info"}>
-                      正在等待 {selectedCounts.waiting}
+                      {t("Waiting", "正在等待")} {selectedCounts.waiting}
                     </Pill>
-                    {selectedCounts.paused > 0 ? <Pill status="info">已暂停 {selectedCounts.paused}</Pill> : null}
-                    {selectedCounts.blocked > 0 ? <Pill status="warn">阻塞 {selectedCounts.blocked}</Pill> : null}
-                    <Pill status="ok">已完成 {selectedCounts.completed}</Pill>
-                    {selectedCounts.failed > 0 ? <Pill status="warn">失败 {selectedCounts.failed}</Pill> : null}
+                    {selectedCounts.paused > 0 ? <Pill status="info">{t("Paused", "已暂停")} {selectedCounts.paused}</Pill> : null}
+                    {selectedCounts.blocked > 0 ? <Pill status="warn">{t("Blocked", "阻塞")} {selectedCounts.blocked}</Pill> : null}
+                    <Pill status="ok">{t("Done", "已完成")} {selectedCounts.completed}</Pill>
+                    {selectedCounts.failed > 0 ? <Pill status="warn">{t("Failed", "失败")} {selectedCounts.failed}</Pill> : null}
                   </div>
                   <div className="topology-detail-actions">
                     <button
@@ -621,13 +636,13 @@ export default function ActivityPage() {
                         setExpandAll(true);
                       }}
                     >
-                      展开全部四列
+                      {t("Expand all 4 stages", "展开全部四列")}
                     </button>
                     <button
                       type="button"
                       className="icon-btn"
                       onClick={() => setSelectedStageId(null)}
-                      aria-label="收起"
+                      aria-label={t("Close", "收起")}
                     >
                       <X size={15} />
                     </button>
@@ -637,7 +652,7 @@ export default function ActivityPage() {
                 {selectedJobs.length === 0 ? (
                   <div className="queue-empty">
                     <span aria-hidden="true" />
-                    空闲 · 当前阶段暂无任务
+                    {t("Idle · No jobs in this stage", "空闲 · 当前阶段暂无任务")}
                   </div>
                 ) : (
                   <div className="topology-detail-grid">
@@ -667,7 +682,7 @@ export default function ActivityPage() {
                       <header className="queue-head">
                         <div className="queue-title">
                           <span className="queue-index">{String(colIndex + 1).padStart(2, "0")}</span>
-                          <h3>{col.label}</h3>
+                          <h3>{colLabel(col)}</h3>
                         </div>
                         <span className="queue-count">{jobs.length}</span>
                       </header>
@@ -680,7 +695,7 @@ export default function ActivityPage() {
                         {jobs.length === 0 ? (
                           <div className="queue-empty">
                             <span aria-hidden="true" />
-                            空闲
+                            {t("Idle", "空闲")}
                           </div>
                         ) : null}
                       </div>
@@ -691,7 +706,7 @@ export default function ActivityPage() {
             ) : null}
           </AnimatePresence>
 
-          {extras ? <p className="hint queue-extras">{extras}（不进上面四列）</p> : null}
+          {extras ? <p className="hint queue-extras">{extras} ({t("not shown in the 4 stages", "不进上面四列")})</p> : null}
         </>
       )}
     </div>
