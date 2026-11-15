@@ -41,13 +41,13 @@
 ## 界面预览
 
 ### 探索 — 3D 影院走廊与导演搜索台
-![CineVec Explore 3D Cinema](docs/images/explore.png)
+![CineVec Explore 3D Cinema](docs/images/explore-cinema.png)
 
 ### 仪表盘 — 宿主机监控与四阶段流水线拓扑
-![CineVec Activity Dashboard](docs/images/activity.png)
+![CineVec Activity Dashboard](docs/images/activity-pipeline.png)
 
 ### 资料库 — 馆藏浏览与元数据编辑抽屉
-![CineVec Library](docs/images/library.png)
+![CineVec Library](docs/images/library-grid.png)
 
 ---
 

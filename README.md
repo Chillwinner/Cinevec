@@ -41,13 +41,13 @@ English | [简体中文](README.zh-CN.md)
 ## Screenshots
 
 ### Explore — 3D Cinema & Director Search Dock
-![CineVec Explore 3D Cinema](docs/images/explore.png)
+![CineVec Explore 3D Cinema](docs/images/explore-cinema.png)
 
 ### Activity — Hardware Telemetry & 4-Stage Pipeline Topology
-![CineVec Activity Dashboard](docs/images/activity.png)
+![CineVec Activity Dashboard](docs/images/activity-pipeline.png)
 
 ### Library — Asset Catalog & Metadata Inspector
-![CineVec Library](docs/images/library.png)
+![CineVec Library](docs/images/library-grid.png)
 
 ---
 
