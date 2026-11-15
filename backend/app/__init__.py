@@ -1,0 +1,1 @@
+"""Pica backend application package."""

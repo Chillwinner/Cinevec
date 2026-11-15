@@ -1,0 +1,20 @@
+# 本地环境与产物，勿提交凭据和数据库
+.DS_Store
+.env
+.env.*
+!.env.example
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/data/*
+telegram-plugin/
+web/node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage

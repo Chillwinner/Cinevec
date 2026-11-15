@@ -1,0 +1,10 @@
+[project]
+name = "pica-backend"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Pica API — layered FastAPI backend"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
