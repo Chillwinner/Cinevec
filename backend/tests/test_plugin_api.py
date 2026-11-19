@@ -284,3 +284,105 @@ def test_v1_store_original_false_search_three_routes_patch_and_cover(tmp_path: P
         rep_bytes = client.get(f"/api/v1/assets/{aid}/cover", headers=headers).content
         assert rep_bytes.startswith(b"\xff\xd8")
         assert rep_bytes != cov_get.content
+
+
+def test_v1_enhancements_tags_display_name_ref_id_lifecycle_and_auth_locators(tmp_path: Path):
+    encoder = MemoryEncoder(dim=8)
+    index = MemoryVectorIndex(dim=8)
+    with TestClient(_app(tmp_path, encoder=encoder, index=index)) as client:
+        _platform(client)
+        # Enable web auth so /api/previews and /api/assets require JWT, proving /api/v1 locators work with API token
+        enable = client.post(
+            "/api/auth/enable",
+            json={
+                "username": "admin",
+                "password": "password12345",
+                "password_confirm": "password12345",
+                "signing_key_mode": "custom",
+                "custom_signing_key": "test-signing-key-aaaa-bbbb-cccc-dddd",
+                "confirm_customization": True,
+            },
+        )
+        assert enable.status_code == 200, enable.text
+        jwt = enable.json()["token"]
+        jwt_headers = {"Authorization": f"Bearer {jwt}"}
+
+        created_tok = client.post("/api/settings/api-tokens", headers=jwt_headers, json={"name": "tg-plugin"})
+        assert created_tok.status_code == 201, created_tok.text
+        token = created_tok.json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        img_bytes = write_png_pattern(None, "checker")
+        meta = json.dumps(
+            [
+                {
+                    "relative_path": "clip.png",
+                    "display_name": "Custom Clip Name",
+                    "vectorize": True,
+                    "store_original": False,
+                    "source_url": "https://t.me/testchan/101",
+                    "tags": ["running", "outdoor"],
+                    "ref": {"ref_id": "tg_-1001_101", "locator": "https://t.me/testchan/101"},
+                }
+            ]
+        )
+        imp = client.post(
+            "/api/v1/imports",
+            headers=headers,
+            data={"meta": meta},
+            files=[("files", ("clip.png", BytesIO(img_bytes), "image/png"))],
+        )
+        assert imp.status_code == 201, imp.text
+        asset_out = imp.json()["assets"][0]
+        aid = asset_out["id"]
+        assert asset_out["display_name"] == "Custom Clip Name"
+        assert set(asset_out["tags"]) == {"running", "outdoor"}
+        assert asset_out["lifecycle"] == "active"
+
+        jobs = client.app.state.container.jobs
+        claimed = jobs.claim_next("test-worker")
+        assert claimed is not None
+        jobs.run_claimed(claimed, "test-worker")
+
+        # Exact ref_id lookup
+        found = client.get("/api/v1/assets?ref_id=tg_-1001_101", headers=headers)
+        assert found.status_code == 200
+        assert found.json()["total"] == 1
+        assert found.json()["items"][0]["id"] == aid
+
+        # Locators in text, image, and metadata search must use /api/v1/ and succeed with API token
+        txt = client.post("/api/v1/search/text", headers=headers, json={"query": "outdoor", "top_n": 5})
+        assert txt.status_code == 200
+        txt_hit = next(h for h in txt.json()["items"] if h["asset_id"] == aid)
+        assert txt_hit["video_cover_locator"].startswith(f"/api/v1/assets/{aid}/cover")
+        assert txt_hit["previews"][0]["locator"].startswith(f"/api/v1/previews/{aid}/")
+        assert client.get(f"/api/previews/{aid}/frames/0", headers=headers).status_code == 401
+        assert client.get(txt_hit["previews"][0]["locator"], headers=headers).status_code == 200
+        assert client.get(txt_hit["video_cover_locator"], headers=headers).status_code == 200
+
+        img = client.post(
+            "/api/v1/search/image",
+            headers=headers,
+            files={"image": ("q.png", BytesIO(img_bytes), "image/png")},
+        )
+        assert img.status_code == 200
+        img_hit = next(h for h in img.json()["items"] if h["asset_id"] == aid)
+        assert img_hit["previews"][0]["locator"].startswith(f"/api/v1/previews/{aid}/")
+
+        md = client.get("/api/v1/search/metadata?q=Custom Clip Name", headers=headers)
+        assert md.status_code == 200
+        md_item = md.json()["items"][0]
+        assert md_item["cover_locator"].startswith(f"/api/v1/assets/{aid}/cover")
+        assert md_item["video_cover_locator"].startswith(f"/api/v1/assets/{aid}/cover")
+
+        # Lifecycle updates via PATCH /api/v1/assets/{id}
+        bad_lc = client.patch(f"/api/v1/assets/{aid}", headers=headers, json={"lifecycle": "bogus"})
+        assert bad_lc.status_code == 400
+
+        invalidated = client.patch(f"/api/v1/assets/{aid}", headers=headers, json={"lifecycle": "source_invalid"})
+        assert invalidated.status_code == 200
+        assert invalidated.json()["lifecycle"] == "source_invalid"
+
+        restored = client.patch(f"/api/v1/assets/{aid}", headers=headers, json={"lifecycle": "active"})
+        assert restored.status_code == 200
+        assert restored.json()["lifecycle"] == "active"

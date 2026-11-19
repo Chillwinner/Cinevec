@@ -69,6 +69,7 @@ def plugin_asset_out(asset: Asset, tags: list[str] | None = None) -> dict[str, A
         "cover_key": cover_key,
         "cover_url": f"/api/v1/assets/{asset.id}/cover",
         "excluded": bool(getattr(asset, "excluded", False)),
+        "lifecycle": getattr(asset, "lifecycle", "active"),
         "vectorize": asset.vectorize,
         "index_state": asset.index_state,
         "searchable": asset_is_searchable(asset),

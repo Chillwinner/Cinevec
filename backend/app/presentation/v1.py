@@ -28,11 +28,26 @@ def _c(request: Request) -> Container:
     return request.app.state.container
 
 
+def _rewrite_v1_locators(obj: Any) -> Any:
+    if isinstance(obj, str):
+        if obj.startswith("/api/previews/"):
+            return "/api/v1/previews/" + obj[len("/api/previews/"):]
+        if obj.startswith("/api/assets/"):
+            return "/api/v1/assets/" + obj[len("/api/assets/"):]
+        return obj
+    if isinstance(obj, list):
+        return [_rewrite_v1_locators(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: _rewrite_v1_locators(val) for key, val in obj.items()}
+    return obj
+
+
 class V1AssetPatchIn(BaseModel):
     description: str | None = None
     display_name: str | None = None
     source_url: str | None = None
     tags: list[str] | None = None
+    lifecycle: str | None = None
 
 
 class V1TagIn(BaseModel):
@@ -131,6 +146,7 @@ def v1_list_assets(
     pending: str | None = None,
     indexed: str | None = None,
     q: str | None = None,
+    ref_id: str | None = None,
     limit: int = Query(60, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> dict:
@@ -144,6 +160,8 @@ def v1_list_assets(
         "indexed": parse_bool_param(indexed),
         "query": q,
     }
+    if ref_id:
+        filters["ref_id"] = ref_id
     imports = _c(request).imports
     assets = imports.list_assets(source_id, limit=limit, offset=offset, **filters)
     total = imports.count_assets(source_id, **filters)
@@ -235,7 +253,7 @@ def v1_search_text(request: Request, body: V1TextSearchIn) -> dict[str, Any]:
         overrides["top_n"] = body.top_n
     if body.score_threshold is not None:
         overrides["score_threshold"] = body.score_threshold
-    return _c(request).search.search(body.query, has_image=False, overrides=overrides or None)
+    return _rewrite_v1_locators(_c(request).search.search(body.query, has_image=False, overrides=overrides or None))
 
 
 @v1_router.post("/search/image")
@@ -253,14 +271,16 @@ async def v1_search_image(
         overrides["top_n"] = top_n
     if score_threshold is not None:
         overrides["score_threshold"] = score_threshold
-    return _c(request).search.search("", has_image=True, image_bytes=data, overrides=overrides or None)
+    return _rewrite_v1_locators(
+        _c(request).search.search("", has_image=True, image_bytes=data, overrides=overrides or None)
+    )
 
 
 def _v1_metadata_search(request: Request, query: str, source_id: str | None) -> dict[str, Any]:
     lexical = _c(request).lexical
     if lexical is None:
         raise AppError("invalid", "元数据搜索尚未装配。")
-    return lexical.search(query, source_id)
+    return _rewrite_v1_locators(lexical.search(query, source_id))
 
 
 @v1_router.get("/search/metadata")

@@ -56,12 +56,14 @@ class UploadService:
         imports: ImportService,
         work_root: Path | None = None,
         max_files_getter=None,
+        tags=None,
     ) -> None:
         self._metadata = metadata
         self._store = file_store
         self._imports = imports
         self._work_root = Path(work_root) if work_root else None
         self._max_files_getter = max_files_getter
+        self._tags = tags
 
     def set_asset_cover(self, asset_id: str, cover_bytes: bytes) -> Any:
         asset = self._metadata.get_asset(asset_id)
@@ -168,6 +170,7 @@ class UploadService:
         rel_to_key: dict[str, str] = {}
         local_spools: list[dict[str, Any]] = []
         pending_covers: list[tuple[str, bytes]] = []
+        pending_tags: list[tuple[str, list[str]]] = []
         for entry in primary_files:
             filename = entry.get("filename") or ""
             relative = sanitize_relative_path(entry.get("relative_path") or filename, fallback_name=filename)
@@ -177,6 +180,8 @@ class UploadService:
             vectorize = _truthy(item_meta.get("vectorize"), True if plugin else False)
             source_url = str(item_meta.get("source_url") or item_meta.get("url") or "").strip()
             description = str(item_meta.get("description") or "").strip()
+            custom_name = str(item_meta.get("display_name") or "").strip()
+            resolved_display_name = custom_name or display_name_from_key(relative)
             ref = normalize_external_ref(item_meta.get("ref") or item_meta.get("external_ref"))
             if source_url:
                 if ref is None:
@@ -209,6 +214,11 @@ class UploadService:
                 self._copy_stream(stream, spool)
                 local_spools.append({"relative": relative, "path": spool, "kind": kind, "filename": filename, "object_key": key})
             rel_to_key[relative] = key
+            raw_tags = item_meta.get("tags")
+            if isinstance(raw_tags, list):
+                cleaned_tags = [str(t).strip() for t in raw_tags if str(t).strip()]
+                if cleaned_tags:
+                    pending_tags.append((key, cleaned_tags))
             cov_rel = str(item_meta.get("cover_relative_path") or "").strip()
             if cov_rel:
                 cov_norm = sanitize_relative_path(cov_rel)
@@ -223,7 +233,7 @@ class UploadService:
                 "object_key": key,
                 "vectorize": vectorize,
                 "origin": origin,
-                "display_name": display_name_from_key(relative),
+                "display_name": resolved_display_name,
                 "kind": kind,
                 "batch_id": batch_id,
                 "subtitle_relative_path": item_meta.get("subtitle_relative_path"),
@@ -236,7 +246,7 @@ class UploadService:
                 {
                     "object_key": None if origin == "plugin" else key,
                     "relative_path": relative,
-                    "display_name": display_name_from_key(relative),
+                    "display_name": resolved_display_name,
                     "copy": copy,
                     "store_original": copy,
                     "origin": origin,
@@ -253,6 +263,13 @@ class UploadService:
 
         assets, jobs = self._imports.import_items(platform.id, import_items)
         self._attach_local_work(assets, jobs, local_spools)
+        if pending_tags and self._tags is not None:
+            by_key = {a.object_key: a for a in assets}
+            for obj_key, tag_list in pending_tags:
+                target = by_key.get(obj_key)
+                if target is not None:
+                    for tag_name in tag_list:
+                        self._tags.add(target.id, tag_name)
         if pending_covers:
             by_key = {a.object_key: a for a in assets}
             updated_map: dict[str, Any] = {}

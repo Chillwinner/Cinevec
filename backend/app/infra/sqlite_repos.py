@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from typing import Any
 
@@ -298,7 +299,7 @@ class SqliteMetadataRepository:
         ).fetchone()
         return _asset_from_row(row)
 
-    def list_assets(
+    def _asset_filter_sql(
         self,
         source_id: str | None = None,
         *,
@@ -307,9 +308,8 @@ class SqliteMetadataRepository:
         pending: bool | None = None,
         indexed: bool | None = None,
         query: str | None = None,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[Asset]:
+        ref_id: str | None = None,
+    ) -> tuple[str, list[Any]]:
         clauses: list[str] = []
         params: list[Any] = []
         if source_id:
@@ -338,7 +338,35 @@ class SqliteMetadataRepository:
                 "OR EXISTS (SELECT 1 FROM asset_tags x WHERE x.asset_id = assets.id AND x.tag LIKE ? ESCAPE char(92)))"
             )
             params.extend([like, like, like, like])
+        if ref_id and ref_id.strip():
+            cleaned = ref_id.strip()
+            clauses.append("(object_key = ? OR json_extract(external_ref, '$.ref_id') = ?)")
+            params.extend([f"plugin/{cleaned}", cleaned])
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        return where, params
+
+    def list_assets(
+        self,
+        source_id: str | None = None,
+        *,
+        kind: str | None = None,
+        excluded: bool | None = None,
+        pending: bool | None = None,
+        indexed: bool | None = None,
+        query: str | None = None,
+        ref_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Asset]:
+        where, params = self._asset_filter_sql(
+            source_id,
+            kind=kind,
+            excluded=excluded,
+            pending=pending,
+            indexed=indexed,
+            query=query,
+            ref_id=ref_id,
+        )
         sql = f"SELECT * FROM assets {where} ORDER BY created_at DESC"
         if limit is not None:
             sql += " LIMIT ? OFFSET ?"
@@ -355,36 +383,17 @@ class SqliteMetadataRepository:
         pending: bool | None = None,
         indexed: bool | None = None,
         query: str | None = None,
+        ref_id: str | None = None,
     ) -> int:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if source_id:
-            clauses.append("source_id = ?")
-            params.append(source_id)
-        if kind:
-            clauses.append("kind = ?")
-            params.append(kind)
-        if excluded is True:
-            clauses.append("COALESCE(excluded, 0) = 1")
-        elif excluded is False:
-            clauses.append("COALESCE(excluded, 0) = 0")
-        if pending is True:
-            clauses.append("(COALESCE(excluded, 0) = 0 AND COALESCE(vectorize, 0) = 1 AND COALESCE(index_state, '') != 'ready')")
-        elif pending is False:
-            clauses.append("(COALESCE(excluded, 0) = 1 OR COALESCE(vectorize, 0) = 0 OR COALESCE(index_state, '') = 'ready')")
-        if indexed is True:
-            clauses.append("COALESCE(index_state, '') = 'ready'")
-        elif indexed is False:
-            clauses.append("COALESCE(index_state, '') != 'ready'")
-        if query:
-            like = self._like_contains(query.strip())
-            clauses.append(
-                "(object_key LIKE ? ESCAPE char(92) OR IFNULL(display_name, '') LIKE ? ESCAPE char(92) "
-                "OR IFNULL(description, '') LIKE ? ESCAPE char(92) "
-                "OR EXISTS (SELECT 1 FROM asset_tags x WHERE x.asset_id = assets.id AND x.tag LIKE ? ESCAPE char(92)))"
-            )
-            params.extend([like, like, like, like])
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        where, params = self._asset_filter_sql(
+            source_id,
+            kind=kind,
+            excluded=excluded,
+            pending=pending,
+            indexed=indexed,
+            query=query,
+            ref_id=ref_id,
+        )
         row = self._conn.execute(f"SELECT COUNT(*) AS n FROM assets {where}", params).fetchone()
         return int(row["n"] if row else 0)
 
@@ -1445,11 +1454,24 @@ class SqliteMetadataRepository:
         return updated
 
 
+EMBED_LANE_STAGES = (
+    "embed_pending",
+    "embedding",
+    "encoding",
+    "embed",
+    "writing",
+    "associating",
+    "associated",
+    "activated",
+)
+
+
 class SqliteTaskRepository:
 
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
+        self._claim_lock = threading.Lock()
 
     def add_job(self, job: Job) -> Job:
         ts = iso()
@@ -1560,34 +1582,54 @@ class SqliteTaskRepository:
         assert job is not None
         return job
 
-    def claim_next(self, worker_id: str, lease_seconds: int) -> Job | None:
-        now_s = iso()
-        row = self._conn.execute(
-            """
-            SELECT * FROM jobs
-            WHERE status = 'waiting'
-               OR (status = 'running' AND (lease_until IS NULL OR lease_until < ?))
-            ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 ELSE 1 END ASC, created_at ASC
-            LIMIT 1
-            """,
-            (now_s,),
-        ).fetchone()
-        if not row:
-            return None
-        job = _job_from_row(row)
-        from datetime import timedelta
+    def claim_next(self, worker_id: str, lease_seconds: int, *, lane: str | None = None) -> Job | None:
+        with self._claim_lock:
+            now_s = iso()
+            base = "(status = 'waiting' OR (status = 'running' AND (lease_until IS NULL OR lease_until < ?)))"
+            params: list[Any] = [now_s]
+            marks = ", ".join("?" for _ in EMBED_LANE_STAGES)
+            if lane == "preprocess":
+                lane_clause = (
+                    " AND job_type != 'reindex_profile'"
+                    f" AND NOT (job_type IN ('index_asset', 'index_subtitles') AND COALESCE(stage, '') IN ({marks}))"
+                )
+                params.extend(EMBED_LANE_STAGES)
+                order_by = "ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 ELSE 1 END ASC, created_at ASC"
+            elif lane == "embed":
+                lane_clause = (
+                    " AND (job_type = 'reindex_profile'"
+                    f" OR (job_type IN ('index_asset', 'index_subtitles') AND COALESCE(stage, '') IN ({marks})))"
+                )
+                params.extend(EMBED_LANE_STAGES)
+                order_by = "ORDER BY created_at ASC"
+            else:
+                lane_clause = ""
+                order_by = "ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 ELSE 1 END ASC, created_at ASC"
+            row = self._conn.execute(
+                f"""
+                SELECT * FROM jobs
+                WHERE {base}{lane_clause}
+                {order_by}
+                LIMIT 1
+                """,
+                params,
+            ).fetchone()
+            if not row:
+                return None
+            job = _job_from_row(row)
+            from datetime import timedelta
 
-        lease = now_dt = __import__("app.infra.clock", fromlist=["now"]).now()
-        lease = now_dt + timedelta(seconds=lease_seconds)
-        checkpoint = dict(job.checkpoint)
-        checkpoint["worker_id"] = worker_id
-        self.update_job(
-            job.id,
-            status="running",
-            lease_until=lease,
-            checkpoint=checkpoint,
-        )
-        return self.get_job(job.id)
+            lease = now_dt = __import__("app.infra.clock", fromlist=["now"]).now()
+            lease = now_dt + timedelta(seconds=lease_seconds)
+            checkpoint = dict(job.checkpoint)
+            checkpoint["worker_id"] = worker_id
+            self.update_job(
+                job.id,
+                status="running",
+                lease_until=lease,
+                checkpoint=checkpoint,
+            )
+            return self.get_job(job.id)
 
     def waiting_positions(self) -> dict[str, int]:
         rows = self._conn.execute(

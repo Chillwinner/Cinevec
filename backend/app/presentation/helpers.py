@@ -100,6 +100,12 @@ def apply_asset_patch(container: Container, asset_id: str, payload: dict[str, An
             if existing_ref.get("locator"):
                 existing_ref.pop("locator", None)
             updates["external_ref"] = existing_ref or None
+    if "lifecycle" in payload and payload["lifecycle"] is not None:
+        val = str(payload["lifecycle"]).strip()
+        if val not in {"active", "missing", "source_invalid"}:
+            raise AppError("invalid", "lifecycle 仅支持 active、missing 或 source_invalid。")
+        updates["lifecycle"] = val
+        updates["source_deleted"] = val == "source_invalid"
     updated = metadata.update_asset(asset_id, **updates) if updates else asset
     tags_svc = container.tags
     if "tags" in payload and payload["tags"] is not None:

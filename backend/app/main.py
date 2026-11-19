@@ -340,6 +340,7 @@ def build_container(
         imports,
         work_root=work_dir,
         max_files_getter=lambda: app_settings.get_upload()["max_upload_files"],
+        tags=tags,
     )
     api_tokens = ApiTokenService(metadata)
     refresh = RefreshService(
@@ -429,7 +430,7 @@ def build_container(
         media=media,
         api_tokens=api_tokens,
     )
-    dispatcher = JobDispatcher(jobs, settings)
+    dispatcher = JobDispatcher(jobs, settings, work_root=work_dir)
     container_extras = {
         "conn": conn,
         "worker_enabled": settings.worker_enabled if worker_enabled is None else worker_enabled,

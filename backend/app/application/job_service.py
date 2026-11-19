@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import time
 from datetime import timedelta
+from pathlib import Path
 
 from app.application.pipeline_service import PipelineService
 from app.domain.errors import AppError, NotFoundError
 from app.domain.models import Job, JobStatus
 from app.domain.ports import ImageTextEncoder, TaskRepository, VectorIndex
 from app.infra.clock import now
+from app.infra.encode_local import cleanup_encode_work, safe_rmtree
 from app.infra.sqlite_repos import SqliteTaskRepository
 
 
@@ -69,6 +71,22 @@ class JobService:
             raise AppError("invalid_state", "只有失败或卡住等待向量化的任务可以重试。")
         if job.error_code == "cancelled":
             raise AppError("invalid_state", "已取消的任务不能重试。")
+        ck = job.checkpoint or {}
+        units = ck.get("encode_units") or []
+        if (
+            ck.get("media_done")
+            and units
+            and all(u.get("local_path") and Path(str(u["local_path"])).is_file() for u in units)
+        ):
+            return self._tasks.update_job(
+                job_id,
+                status="waiting",
+                stage="embed_pending",
+                step="等待向量编码重试",
+                error_code=None,
+                error_message=None,
+                lease_until=None,
+            )
         # 保留 payload（object_key 等），从流水线起点重新调度，不新建资产、不重复导入。
         return self._tasks.update_job(
             job_id,
@@ -90,7 +108,7 @@ class JobService:
             raise AppError("invalid_state", "已结束的任务不能取消")
         if job.status == "failed":
             raise AppError("invalid_state", "已结束的任务不能取消")
-        return self._tasks.update_job(
+        updated = self._tasks.update_job(
             job_id,
             status="failed",
             error_code="cancelled",
@@ -98,6 +116,8 @@ class JobService:
             step="已取消",
             lease_until=None,
         )
+        cleanup_encode_work(job.checkpoint)
+        return updated
 
     def delete(self, job_id: str) -> None:
         job = self.get(job_id)
@@ -105,17 +125,22 @@ class JobService:
             raise AppError("invalid_state", "请先取消或暂停后再删除未结束任务")
         self._tasks.delete_job(job_id)
 
-    def claim_next(self, worker_id: str) -> Job | None:
+    def claim_next(self, worker_id: str, *, lane: str | None = None) -> Job | None:
         if self.query_priority_active():
             return None
-        return self._tasks.claim_next(worker_id, lease_seconds=self._lease)
+        if lane is None:
+            return self._tasks.claim_next(worker_id, lease_seconds=self._lease)
+        try:
+            return self._tasks.claim_next(worker_id, lease_seconds=self._lease, lane=lane)
+        except TypeError:
+            return self._tasks.claim_next(worker_id, lease_seconds=self._lease)
 
     def tick_schedule(self) -> None:
         if self._refresh is None:
             return
         self._refresh.tick_schedule()
 
-    def run_claimed(self, job: Job, worker_id: str) -> Job:
+    def run_claimed(self, job: Job, worker_id: str, *, lane: str | None = None) -> Job:
         current = self.get(job.id)
         checkpoint = dict(current.checkpoint or {})
         checkpoint["worker_id"] = worker_id
@@ -140,6 +165,8 @@ class JobService:
             if outcome == "completed":
                 return self._mark_completed(job.id)
             return self.get(job.id)
+        if lane == "embed":
+            return self._run_embed_lane(job.id)
         pipeline = self._subtitles if job.job_type == "index_subtitles" else self._pipeline
         if pipeline is None:
             raise AppError("index_pipeline_pending", "对应流水线尚未装配")
@@ -152,6 +179,18 @@ class JobService:
             if outcome == "paused":
                 return self.get(job.id)
             if outcome == "blocked":
+                if lane == "preprocess":
+                    latest = self.get(job.id)
+                    if latest.status == "paused":
+                        return latest
+                    return self._tasks.update_job(
+                        job.id,
+                        status="waiting",
+                        stage="embed_pending",
+                        step="媒体预处理已完成，原片已清理，等待向量编码",
+                        lease_until=None,
+                        progress=1,
+                    )
                 written = self._try_embed(self.get(job.id))
                 if written == "completed":
                     return self._mark_completed(job.id)
@@ -165,6 +204,28 @@ class JobService:
             if self.query_priority_active():
                 if self._wait_priority(job.id) == "paused":
                     return self.get(job.id)
+
+    def _run_embed_lane(self, job_id: str) -> Job:
+        current = self.get(job_id)
+        if current.status == "paused":
+            return current
+        if self.query_priority_active():
+            if self._wait_priority(job_id) == "paused":
+                return self.get(job_id)
+        current = self.get(job_id)
+        if current.status == "paused":
+            return current
+        self._tasks.update_job(
+            job_id,
+            lease_until=now() + timedelta(seconds=self._lease),
+            step="向量编码中",
+        )
+        written = self._try_embed(self.get(job_id))
+        if written == "completed":
+            return self._mark_completed(job_id)
+        if written == "failed":
+            return self.get(job_id)
+        return self._mark_blocked(job_id, job_type=current.job_type)
 
     def _drain_purge_jobs(self, worker_id: str) -> None:
         if self._lifecycle is None:
@@ -282,7 +343,7 @@ class JobService:
         current = self._tasks.get_job(job_id)
         if current and current.status == "paused":
             return current
-        return self._tasks.update_job(
+        updated = self._tasks.update_job(
             job_id,
             status="failed",
             error_code=code,
@@ -290,6 +351,30 @@ class JobService:
             step="失败",
             lease_until=None,
         )
+        if not (current and (current.checkpoint or {}).get("media_done")):
+            cleanup_encode_work(current.checkpoint if current else None)
+        return updated
+
+    def cleanup_orphan_work(self, work_root: Path) -> int:
+        if not work_root.is_dir():
+            return 0
+        keep_ids: set[str] = set()
+        for job in self._tasks.list_jobs():
+            ck = job.checkpoint or {}
+            if job.status in {"waiting", "running", "paused", "blocked"}:
+                keep_ids.add(job.id)
+            elif job.status == "failed" and job.error_code != "cancelled" and ck.get("media_done"):
+                keep_ids.add(job.id)
+        removed = 0
+        for child in work_root.iterdir():
+            if not child.is_dir():
+                continue
+            if child.name == "_incoming" or child.name.startswith("."):
+                continue
+            if child.name not in keep_ids:
+                safe_rmtree(child)
+                removed += 1
+        return removed
 
     def query_priority_active(self) -> bool:
         if not isinstance(self._tasks, SqliteTaskRepository):
