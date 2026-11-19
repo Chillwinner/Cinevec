@@ -77,13 +77,17 @@
 
 ## 권장 사양 및 `EmbeddingGemma 2` 채택 이유
 
-### 권장 하드웨어 및 구성
+### 가정용 홈서버 권장 사양 (본체와 모델 분리 계산)
 
-| 등급 | CPU / GPU / RAM | 디스크 | 권장 용도 | 추천 실행 방식 |
-| :--- | :--- | :--- | :--- | :--- |
-| **입문용 (CPU 전용)** | 4 vCPU · 8 GB RAM | 20 GB SSD | 1만 프레임 미만 테스트 및 GPU 없는 서버 | 기본 `docker compose up -d` (경량 이미지: `.env`에 `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu`) |
-| **일상 주력 (추천)** | 6코어+ · **NVIDIA GPU (6–8 GB VRAM)** 또는 **Apple Silicon (16 GB+ 통합 메모리)** · 16 GB RAM | 50 GB+ NVMe | 빠른 영상 키프레임 추출 및 쾌적한 시맨틱 검색 | GPU PC: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d` (`bfloat16`) / Mac: 호스트에서 **MPS** 네이티브 실행 |
-| **팀 / 대규모 아카이브** | 8코어+ · RTX 3080/4080+ · 32 GB+ RAM | 200 GB+ NVMe | 10만 프레임 이상, 다중 플러그인 동시 수집 | `encoder`를 별도 GPU 서버에 배치하고 `PICA_MILVUS_BACKEND=rest`로 외부 Milvus v2 연결 |
+CineVec은 **가정용 NAS 및 미니 PC 배포**에 최적화되어 있습니다. 내장 **Milvus Lite**(클러스터 불필요)를 사용하며 **본체**와 **임베딩 모델**을 분리해 계산·배치할 수 있습니다:
+
+| 구성 요소 | CPU / 메모리 점유율 | 디스크 | 설명 |
+| :--- | :--- | :--- | :--- |
+| **CineVec 본체** (Backend + Milvus Lite + Web UI) | **1–2코어 · 0.5 GB 미만** (MinIO 포함 약 0.8 GB) | 5 GB+ | 매우 가벼워 보급형 NAS나 미니 PC에 상시 구동 가능. |
+| **임베딩 모델** (권장: **`EmbeddingGemma 2`**) | **2코어+ CPU · 약 2.5 GB 메모리** (GPU / Mac MPS 지원) | 약 2 GB 가중치 캐시 | 오디오 타워 제외 시 약 440M 파라미터. 같은 기기 또는 별도 PC/GPU 서버에 분리 실행 가능. |
+
+- **올인원 가정용 권장 사양**: **4코어 CPU · 4–6 GB RAM · 10 GB+ 디스크** (N100 미니 PC, 구형 노트북, 가정용 NAS에서 외장 GPU 없이 실행 가능).
+- **분리 절약 구성**: NAS 메모리가 2 GB뿐이라면 NAS에는 **0.5 GB 미만의 본체**만 두고, **~2.5 GB의 `EmbeddingGemma 2`**는 평소 쓰는 PC나 Mac에서 실행해 `PICA_CLIP_HTTP_BASE_URL`로 연결하면 됩니다.
 
 ### 왜 기본 모델로 `google/embeddinggemma-2`를 쓰나요?
 

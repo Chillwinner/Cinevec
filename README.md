@@ -86,13 +86,17 @@ Most self-hosted galleries either force you to duplicate terabytes of video into
 
 ## Recommended Specs & Why EmbeddingGemma 2
 
-### Recommended Hardware & Configuration
+### Recommended Home-Lab Hardware (Core & Model Counted Separately)
 
-| Tier | CPU / GPU / RAM | Disk | Typical Use Case | Suggested Encoder Config |
-| :--- | :--- | :--- | :--- | :--- |
-| **Starter (CPU-Only)** | 4 vCPU · 8 GB RAM | 20 GB SSD | Small archives (<10k frames), testing, zero GPU servers | Default `docker compose up -d` (`EMBED_DEVICE=cpu`, `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu`) |
-| **Recommended Daily Driver** | 6+ cores · **NVIDIA GPU (6–8 GB VRAM)** or **Apple Silicon (16 GB+ Unified RAM)** · 16 GB RAM | 50 GB+ NVMe | Fast video keyframe ingestion, smooth interactive semantic search | Linux/Windows GPU: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d` (`bfloat16`) · Mac: run `encoder/server.py` natively on **MPS** |
-| **Team / Heavy Scale** | 8+ cores · RTX 3080/4080+ (10–24 GB VRAM) · 32 GB+ RAM | 200 GB+ NVMe | 100k+ frames, multi-plugin ingestion, team library | Run `encoder` on dedicated GPU host + switch `PICA_MILVUS_BACKEND=rest` to standalone Milvus v2 |
+CineVec is built for **home-server & NAS deployment** — with embedded **Milvus Lite** (no heavy cluster), the **core** and the **encoder model** are cleanly decoupled so you can run them together or on separate machines:
+
+| Component | CPU / Memory | Disk | Notes |
+| :--- | :--- | :--- | :--- |
+| **CineVec Core** (Backend + Milvus Lite + Web UI) | **1–2 vCPU · < 0.5 GB RAM** (~0.8 GB with MinIO) | 5 GB+ (excluding kept originals) | Ultra-lightweight — runs smoothly 24/7 on an entry NAS, mini PC, or cheap VPS. |
+| **Embedding Model** (Recommended: **`EmbeddingGemma 2`**) | **2+ cores CPU · ~2.5 GB RAM** (faster with GPU / Mac MPS) | ~2 GB weight cache | ~440M active params (audio tower disabled); run on the same box or offload to another PC/GPU host on demand. |
+
+- **All-in-One Home Server**: **4 cores · 4–6 GB RAM · 10 GB+ disk** runs the entire stack comfortably on an N100 mini PC, old laptop, or home NAS — no discrete GPU required.
+- **Split-Host Setup**: If your NAS only has 2 GB RAM, keep the **<0.5 GB Core** running 24/7 on the NAS and run the **~2.5 GB `EmbeddingGemma 2`** service on your desktop/Mac whenever you batch-import or search via `PICA_CLIP_HTTP_BASE_URL`.
 
 ### Why CineVec Defaults to `google/embeddinggemma-2`
 

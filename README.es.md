@@ -77,13 +77,17 @@ Describe una escena, arrastra una captura o busca una frase de subtítulos — C
 
 ## Configuración recomendada y por qué `EmbeddingGemma 2`
 
-### Hardware recomendado
+### Hardware recomendado para hogar / NAS (Núcleo y modelo por separado)
 
-| Nivel | CPU / GPU / RAM | Disco | Uso típico | Despliegue sugerido |
-| :--- | :--- | :--- | :--- | :--- |
-| **Inicial (Solo CPU)** | 4 vCPU · 8 GB RAM | 20 GB SSD | Pruebas y bibliotecas pequeñas (<10k fotogramas) | `docker compose up -d` estándar (imagen CPU ligera con `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu`) |
-| **Uso diario (Recomendado)** | 6+ núcleos · **GPU NVIDIA (6–8 GB VRAM)** o **Apple Silicon (16 GB+ RAM unificada)** · 16 GB RAM | 50 GB+ NVMe | Ingesta rápida de vídeo y búsqueda fluida | Linux/Windows GPU: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d` (`bfloat16`); Mac: ejecutar `encoder/server.py` nativo con **MPS** |
-| **Equipo / Gran escala** | 8+ núcleos · RTX 3080/4080+ · 32 GB+ RAM | 200 GB+ NVMe | +100k fotogramas y múltiples plugins | Mover `encoder` a un servidor GPU dedicado y cambiar `PICA_MILVUS_BACKEND=rest` hacia un clúster Milvus v2 |
+CineVec está pensado para **despliegue doméstico ligero** — con **Milvus Lite** integrado (sin clúster pesado), el **núcleo** y el **modelo** están desacoplados y se dimensionan por separado:
+
+| Componente | CPU / Memoria | Disco | Notas |
+| :--- | :--- | :--- | :--- |
+| **Núcleo CineVec** (Backend + Milvus Lite + Web UI) | **1–2 vCPU · < 0.5 GB RAM** (~0.8 GB con MinIO) | 5 GB+ | Ultraligero: funciona 24/7 en cualquier NAS básico, mini PC o VPS económico. |
+| **Modelo de embeddings** (Recomendado: **`EmbeddingGemma 2`**) | **2+ núcleos CPU · ~2.5 GB RAM** (más rápido con GPU / Mac MPS) | ~2 GB caché de pesos | ~440M parámetros activos (sin torre de audio); puede correr en la misma máquina o en otro PC bajo demanda. |
+
+- **Todo en uno para casa**: **4 núcleos · 4–6 GB RAM · 10 GB+ de disco** bastan para mover todo el stack en un mini PC N100, portátil antiguo o NAS doméstico (sin GPU dedicada).
+- **Modo dividido**: si tu NAS solo tiene 2 GB de RAM, deja el **núcleo (<0.5 GB)** en el NAS y ejecuta **`EmbeddingGemma 2` (~2.5 GB)** en tu PC o Mac cuando importes o busques mediante `PICA_CLIP_HTTP_BASE_URL`.
 
 ### ¿Por qué elegimos `google/embeddinggemma-2` por defecto?
 

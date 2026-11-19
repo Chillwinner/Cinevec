@@ -86,13 +86,17 @@
 
 ## 推荐配置与为什么默认选 `EmbeddingGemma 2`
 
-### 推荐硬件配置表
+### 家庭部署推荐配置（本体与模型分开计算）
 
-| 档位 | CPU / 显卡 / 内存 | 磁盘建议 | 适用场景 | 推荐部署方式 |
-| :--- | :--- | :--- | :--- | :--- |
-| **入门尝鲜（纯 CPU）** | 4 核 CPU · 8 GB 内存 | 20 GB SSD | 几千张图/短视频测试、无显卡小鸡 | 直接 `docker compose up -d`（可设 `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu` 瘦身镜像） |
-| **日常主力（强烈推荐）** | 6 核+ · **NVIDIA 显卡（6–8 GB 显存）** 或 **Apple Silicon（16 GB+ 统一内存）** · 16 GB 内存 | 50 GB+ NVMe | 流畅批量视频抽帧 + 毫秒级语义检索，性价比最高 | Linux/Win 显卡：`docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`；Mac 建议宿主机原生跑 `encoder/server.py` 开启 **MPS** |
-| **团队 / 大规模片库** | 8 核+ · RTX 3080/4080+（10–24 GB 显存） · 32 GB+ 内存 | 200 GB+ NVMe | 十万级以上帧向量、多插件并发接入 | 将 `encoder` 放到独立显卡服务器，后端改用外置 **Milvus REST v2** 集群 |
+CineVec 主打轻量家庭部署——内置 **Milvus Lite** 单文件向量库，无需起沉重的集群；**本体**与**模型**完全解耦，资源分开计算：
+
+| 组件 | CPU / 内存占用 | 磁盘建议 | 说明 |
+| :--- | :--- | :--- | :--- |
+| **CineVec 本体**（后端 + Milvus Lite + 前端） | **1～2 核 CPU · 不到 0.5 GB 内存**（含 MinIO 约 0.8 GB） | 5 GB+（不含自留原片） | 极度轻量，普通入门 NAS、软路由小主机都能长期常驻。 |
+| **编码模型**（默认推荐 **`EmbeddingGemma 2`**） | **2 核+ CPU · 约 2.5 GB 内存**（有显卡/Mac MPS 更快） | 约 2 GB 权重缓存 | 裁剪音频塔后约 440M 参数；可和本体同机跑，也可单独丢在另一台电脑/显卡机上按需连接。 |
+
+- **同机一体家庭推荐配置**：**4 核 CPU · 4～6 GB 内存 · 10 GB+ 磁盘**（N100 小主机、老笔记本、家用 NAS 都能跑起整套语义搜图，零显卡也可用）。
+- **分体省内存玩法**：如果 NAS 只有 2 GB 内存，只需在 NAS 常驻 **<0.5 GB 的本体**，把 **~2.5 GB 的 `EmbeddingGemma 2`** 放在日常用的电脑或 Mac 上，批量入库和搜图时通过 `PICA_CLIP_HTTP_BASE_URL` 接入即可。
 
 ### 为什么默认采用 `google/embeddinggemma-2`？
 
