@@ -4,34 +4,30 @@
 
 ### Self-Hosted Multimodal Media Search with a Cinema-Grade 3D Screening UI
 
-Powered by **Google EmbeddingGemma 2**, **Milvus REST v2**, **FFmpeg**, and **S3 / MinIO** — with **Zero-Retention Indexing** and **Bilingual (`EN / 中文`) UI**.
+**Stop playing detective with `VID_20240819_final_FINAL2.mp4`.**
+Type a scene, drop a screenshot, or search a subtitle line — CineVec flies you straight to the exact video timestamp in a 3D WebGL screening room.
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+**English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md)
 
 [![EmbeddingGemma 2](https://img.shields.io/badge/Embedding-Gemma%202%20(768d)-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
-[![Milvus](https://img.shields.io/badge/Milvus-REST%20v2-00A1EA?style=for-the-badge)](https://milvus.io/)
+[![Milvus Lite / v2](https://img.shields.io/badge/Milvus-Lite%20%2F%20REST%20v2-00A1EA?style=for-the-badge)](https://milvus.io/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.11%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React + Three.js](https://img.shields.io/badge/React%2019-Three.js%20WebGL-111111?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
 [![MinIO / S3](https://img.shields.io/badge/Storage-S3%20%2F%20MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)](https://min.io/)
 
-[Features](#key-features) • [Showcase](#visual-showcase) • [Architecture](#architecture) • [Quickstart](#quickstart) • [Configuration](#configuration) • [API](#plugin--rest-api)
+[What It Does](#what-cinevec-does) • [Showcase](#visual-showcase) • [Why CineVec](#why-cinevec-beats-the-usual-suspects) • [Plugins & CineGram](#plugin-ecosystem--cinegram) • [Swap Backends](#swapping-vector-dbs-models--storage) • [Quickstart](#quickstart-deployment)
 
 </div>
 
 ---
 
-## Why CineVec?
+## What CineVec Does
 
-Most self-hosted media galleries stop at filename or EXIF search. **CineVec** brings high-dimensional multimodal retrieval and a cinema-grade screening experience to your own infrastructure — without locking your files into a proprietary format or forcing you to duplicate terabytes of video.
+CineVec is a **self-hosted multimodal media archive & semantic search engine** built for video editors, collectors, and AI tinkerers who own way too many clips and screenshots to ever organize by hand.
 
-| Capability | How CineVec Handles It |
-| :--- | :--- |
-| **Multimodal Retrieval** | Powered by **`google/embeddinggemma-2`** (768-dim `float32` vectors, `full_frame_passthrough_v1`), with pluggable support for **Chinese-CLIP** (HTTP or local ONNX). |
-| **3D WebGL Cinema** | Browse search hits in a curved **Three.js 3D cylindrical corridor** or switch to **Film Grid**. Open any hit in the **Screening Room** for instant timestamp seeking. |
-| **Zero-Retention Mode** | Uncheck *"Store original file in S3"* and attach a `source_url` — CineVec keeps only lightweight previews, covers, and vectors, deleting the temporary original after ingestion. |
-| **Vector-First Safe Purge** | Excluding an asset deletes its Milvus vectors **first**, and only cleans previews/hosted originals once vector removal is confirmed. External S3 buckets are never modified. |
-| **Live Pipeline Telemetry** | Real-time **CPU, RAM, and NVIDIA GPU** gauges (Windows / Linux / macOS) paired with a traffic-light 4-stage pipeline (`Ingest` → `Preprocess` → `Embed` → `Index`). |
-| **Bilingual UI (`EN / 中文`)** | Defaults to English with instant `EN / 中文` switching in the top HUD bar. |
+- **Three Search Modalities in One Dock**: Natural-language visual search (*"redwood forest sunlight"*), image-to-frame drag-and-drop search, and instant lexical search across filenames, tags, and descriptions.
+- **Timestamp-Accurate Screening Room**: Video hits open directly at the matched keyframe second, complete with a keyframe filmstrip, custom covers, and inline `.srt/.vtt/.ass` subtitle cues.
+- **First-Run Guided Walkthrough**: Fresh installs launch an interactive setup checklist + spotlight button tour so nobody has to guess what to configure or click first.
 
 ---
 
@@ -61,175 +57,131 @@ Most self-hosted media galleries stop at filename or EXIF search. **CineVec** br
     <td width="50%" align="center">
       <img src="docs/images/activity-pipeline.png" alt="CineVec Activity Dashboard" />
       <br />
-      <sub><b>Activity Dashboard</b> — Live CPU / RAM / GPU gauges & expandable 4-stage traffic-light pipeline</sub>
+      <sub><b>Activity Dashboard</b> — Live CPU / RAM / GPU gauges &amp; 4-stage traffic-light pipeline</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/images/library-catalog.png" alt="CineVec Library Catalog" />
       <br />
-      <sub><b>Library Catalog</b> — Asset filtering, batch tagging, custom covers, descriptions & safe purge</sub>
+      <sub><b>Library Catalog</b> — Filtering, batch tagging, custom covers, descriptions &amp; safe purge</sub>
     </td>
   </tr>
 </table>
 
 ---
 
-## Key Features
+## Why CineVec Beats the Usual Suspects
 
-### 1. Three Search Modalities in One Director Dock
-- **Semantic Text**: Search visual scenes, objects, mood, and subtitle dialogue in natural language.
-- **Image-to-Frame**: Drag & drop any reference image onto the stage to find visually similar shots.
-- **Lexical Metadata**: Fast substring matching across filenames, tags, and editable asset descriptions.
+Most self-hosted galleries either force you to duplicate terabytes of video into their proprietary folder, choke your disk while waiting on GPU inference, or trap you inside a monolithic codebase. CineVec takes a different route:
 
-### 2. Interactive Screening Room
-- **Instant Timestamp Jump**: Video hits seek directly to the matched keyframe timestamp.
-- **Keyframe Filmstrip & Custom Covers**: Scrub through extracted keyframes or upload a custom poster cover.
-- **Subtitle Timeline**: Explicitly bind `.srt`, `.vtt`, or `.ass` subtitles and inspect matched cues inline.
-
-### 3. Non-Destructive Multi-Bucket Storage
-- Connect multiple S3 / MinIO buckets as read-only input sources (`role: input`) without moving originals.
-- Designate one bucket as platform storage (`is_platform_storage: true`) for previews, covers, and optional hosted uploads.
+| Capability | Typical Media Galleries | CineVec |
+| :--- | :--- | :--- |
+| **Storage Footprint** | Copies every original file into its own vault. | **Zero-Retention Mode**: attach a `source_url`, keep only lightweight previews + vectors, and delete the raw original right after keyframe sampling. |
+| **Batch Video Ingestion** | One slow GPU call stalls everything; raw videos pile up on disk. | **Dual-Lane Worker**: `preprocess` (FFmpeg) and `embed` (GPU/HTTP) run on separate threads. Raw videos are deleted the instant frames are extracted. |
+| **Vector DB Ops** | Requires a 3-container Milvus/etcd/MinIO cluster just to test. | **Milvus Lite out of the box** (`data/milvus_lite.db` in Docker Compose), or flip one env var to connect a full **Milvus REST v2** cluster. |
+| **External Buckets** | Moves or mutates your files. | **Read-Only Multi-Bucket S3/MinIO**: external buckets are never modified; safe purge deletes vectors first, then previews. |
+| **Extensibility** | Hardcoded UI-only uploads. | **First-Class Plugin API (`/api/v1/*`)** with scoped Bearer tokens, batch progress, `ref_id` dedup, and external `lifecycle` sync. |
+| **UX Polish** | Static thumbnail grid. | **Three.js 3D Cinema Corridor**, bilingual (`EN / 中文`) HUD, live CPU/RAM/GPU telemetry, and first-run interactive onboarding. |
 
 ---
 
-## Architecture
+## Plugin Ecosystem & CineGram
 
-```mermaid
-flowchart LR
-    UI["Web UI<br/>React 19 + Three.js WebGL"] <-->|REST / JWT / API Token| API["FastAPI Server<br/>SQLite Catalog"]
-    API -->|Upload / Stream| S3["S3 / MinIO<br/>Buckets & Previews"]
-    API -->|Enqueue| W["Background Worker<br/>4-Stage Pipeline"]
-    W -->|1. Download & Probe| S3
-    W -->|2. Keyframe & Quality Filter| FF["FFmpeg + OpenCV"]
-    W -->|3. Encode Frames & Subtitles| GEMMA["EmbeddingGemma 2<br/>(HTTP Encoder · 768d)"]
-    W -->|4. Upsert Vectors + Metadata| MV["Milvus REST v2"]
-    API -->|Query Embedding| GEMMA
-    API -->|ANN Search + Filter| MV
+CineVec is designed as a **clean retrieval core** — ingest bots, browser clippers, and automation scripts talk strictly over `/api/v1/*` with a scoped Bearer API token (generated in **Settings → Plugin API Tokens**), zero database coupling required.
+
+### Official Telegram Plugin: **[CineGram](https://github.com/Chillwinner/CineGram)**
+
+Want to turn Telegram channels & groups into a searchable 3D archive without duplicating gigabytes of videos? Check out our companion plugin:
+
+> **Repository**: [https://github.com/Chillwinner/CineGram](https://github.com/Chillwinner/CineGram)
+
+- **MTProto User Account + Optional Bot** (both completely optional — run Web-only, Bot-only, MTProto-only, or Dual mode).
+- **Selective Ingestion**: per-group filter rules (media type, file size, duration, keywords, lookback days) **plus** a lightweight Web UI to browse channel thumbnails and cherry-pick which messages to import.
+- **Media Group Caption & `#tag` Inheritance**: multi-file Telegram albums automatically propagate captions and `#hashtags` to every sibling file so nothing gets missed in lexical or tag search.
+- **Availability Watcher**: periodically checks if a group renamed, turned private, or deleted messages, automatically updating `source_url` or flagging `lifecycle="source_invalid"`.
+
+Want to write your own plugin (Discord, Obsidian, Chrome extension, NAS watcher)? Just call `POST /api/v1/imports`, `GET /api/v1/batches/{id}`, `PATCH /api/v1/assets/{id}`, and `POST /api/v1/search/text|image|metadata` — no need to touch CineVec's backend code.
+
+---
+
+## Swapping Vector DBs, Models & Storage
+
+CineVec follows a strict **Hexagonal (Ports & Adapters)** architecture. Business logic in `backend/app/application/` never imports Milvus, MinIO, or any specific model directly — it only talks to `Protocol` interfaces in [`backend/app/domain/ports.py`](backend/app/domain/ports.py).
+
+### 1. Already Built-In (Zero Code — Just `.env`)
+- **Vector DB**: Switch between embedded **Milvus Lite** (`PICA_MILVUS_BACKEND=lite`) and remote **Milvus REST v2** (`PICA_MILVUS_URI=http://...`).
+- **Multimodal Encoder**: Switch between **EmbeddingGemma 2** (`remote_http`) and **Chinese-CLIP** (`remote_http` or `local_onnx`).
+- **Object Storage**: Any S3-compatible store (MinIO, AWS S3, Cloudflare R2, Aliyun OSS).
+
+### 2. Want to Plug In Qdrant, pgvector, Weaviate, or a Custom Model?
+**Yes — you implement the corresponding `Protocol` interface (just 2 touchpoints, zero changes to pipeline/search/UI):**
+
+| Component | Port Interface (`backend/app/domain/ports.py`) | Reference Adapter (`backend/app/infra/`) | Wiring Factory (`backend/app/main.py`) |
+| :--- | :--- | :--- | :--- |
+| **Vector DB** | `VectorIndex` | `milvus_lite.py` / `milvus_rest.py` | `build_vector_index()` |
+| **Image/Text Encoder** | `ImageTextEncoder` | `embeddinggemma_http.py` / `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
+| **Subtitle Encoder** | `SubtitleEncoder` | `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
+| **Platform Storage** | `FileStore` | `file_store.py` | `build_file_store()` |
+| **Read-Only Source** | `SourceReader` | `s3_reader.py` | `build_container()` |
+
+For example, swapping in **Qdrant** or **pgvector** only requires implementing these 5 core methods of `VectorIndex`:
+
+```python
+class MyCustomVectorIndex:
+    def available(self) -> bool: ...
+    def status_message(self) -> str: ...
+    def upsert_records(self, modality: str, records: list[dict]) -> int: ...
+    def search(self, modality: str, vector: list[float], *, limit: int, offset: int = 0, filter_expr: str | None = None) -> list[dict]: ...
+    def delete_vectors(self, refs: list) -> VectorDeleteResult: ...
+    def delete_by_asset(self, asset_id: str, collections: list[str] | None = None) -> VectorDeleteResult: ...
 ```
 
-### 4-Stage Background Pipeline
-
-| Stage | Name | Responsibility |
-| :---: | :--- | :--- |
-| `01` | **Ingest** | Registers assets from local upload or external S3/MinIO keys and tracks `asset_id` + version provenance. |
-| `02` | **Preprocess** | Samples video keyframes via FFmpeg (`interval_seconds`, `uniform_total`, or `frames_per_minute`), filters black/white/blurry/duplicate frames, and generates WebP/JPEG previews. |
-| `03` | **Embed** | Sends frames, descriptions, and subtitle cues to **EmbeddingGemma 2** (768-dim) or Chinese-CLIP. |
-| `04` | **Index** | Upserts vectors and unified `asset_id` / `version` metadata into **Milvus REST v2** and activates searchable state. |
+Then return your adapter inside `build_vector_index()` in [`backend/app/main.py`](backend/app/main.py) — search aggregation, safe vector-first purge, model-space rebuilds, and the 3D Cinema UI all work automatically.
 
 ---
 
-## Quickstart
+## Quickstart Deployment
 
-### Prerequisites
+### Option A: One-Click Docker Compose (Recommended — 2 Minutes)
 
-- **Python 3.11+** & **Node.js 20+**
-- **FFmpeg** (in `PATH` or configured via `PICA_FFMPEG_PATH`)
-- **Milvus v2.4+** (with REST API v2 enabled)
-- **MinIO** or any S3-compatible object storage
-- **Embedding Service**: Remote HTTP encoder serving **EmbeddingGemma 2** (`google/embeddinggemma-2`, 768d) — or local Chinese-CLIP ONNX models
-
-### 1. Configure Environment
-
-Copy the showcase template and fill in your local service endpoints and credentials:
+Includes **MinIO** (bucket auto-created & auto-registered), embedded **Milvus Lite** (no Milvus cluster needed), **FFmpeg**, and the production **Nginx + 3D Web UI**:
 
 ```bash
+git clone https://github.com/Chillwinner/Cinevec.git
+cd Cinevec
+cp .env.docker.example .env
+# Edit .env and set PICA_CLIP_HTTP_BASE_URL to your embedding model HTTP endpoint
+docker compose up -d
+```
+
+Open **http://localhost:5174** — the built-in first-run onboarding wizard will check your services and walk you through every button.
+
+### Option B: Manual Local Development
+
+**Prerequisites**: Python 3.11+, Node.js 20+, FFmpeg, MinIO/S3, and an embedding service (or local Chinese-CLIP ONNX).
+
+```bash
+# 1. Configure backend environment (NEVER commit backend/.env or backend/data/*.db)
 cp .env.example backend/.env
-```
 
-> [!IMPORTANT]
-> Never commit `backend/.env`, `backend/data/*.db`, or real S3/JWT secrets. All environment variables retain the `PICA_*` prefix for full backward compatibility.
-
-### 2. Start the Backend
-
-```bash
+# 2. Start Backend (port 8008) — SQLite & Milvus Lite auto-initialize on first run
 cd backend
 python -m venv .venv
-
-# Windows (PowerShell)
-.\.venv\Scripts\Activate.ps1
-# Linux / macOS
-# source .venv/bin/activate
-
+source .venv/bin/activate        # Windows PowerShell: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install "pymilvus[milvus_lite]>=2.4.9"   # optional: only needed if using Milvus Lite locally
 uvicorn app.main:app --host 127.0.0.1 --port 8008
-```
 
-### 3. Start the Frontend
-
-```bash
+# 3. Start Frontend (port 5174) in a second terminal
 cd web
 npm install
-npm run dev -- --host 127.0.0.1 --port 5174
+npm run dev
 ```
 
 Open **http://127.0.0.1:5174** in your browser.
 
----
-
-## Configuration
-
-Key settings in `backend/.env` (see [`.env.example`](.env.example) for the complete annotated template):
-
-| Group | Key Variables | Description |
-| :--- | :--- | :--- |
-| **Encoder (EmbeddingGemma 2)** | `PICA_ENCODER_BACKEND=remote_http`<br/>`PICA_MODEL_FAMILY=embeddinggemma2`<br/>`PICA_MODEL_ARCHITECTURE=google/embeddinggemma-2`<br/>`PICA_MODEL_DIM=768`<br/>`PICA_PREPROCESS_VERSION=full_frame_passthrough_v1` | Primary multimodal embedding profile via HTTP encoder (`PICA_CLIP_HTTP_BASE_URL`). |
-| **Milvus Vector DB** | `PICA_MILVUS_URI`, `PICA_MILVUS_DB`, `PICA_MILVUS_USER`, `PICA_MILVUS_PASSWORD` / `PICA_MILVUS_TOKEN` | Milvus REST v2 endpoint & credentials for vector upsert, search, and `asset_id`-scoped deletion. |
-| **S3 / MinIO** | `PICA_S3_ENDPOINT`, `PICA_S3_BUCKET`, `PICA_S3_ACCESS_KEY`, `PICA_S3_SECRET_KEY` | Platform storage for previews, covers, and optional hosted originals. |
-| **Sampling & Limits** | `PICA_SAMPLE_INTERVAL_SECONDS=5.0`<br/>`PICA_MAX_UPLOAD_FILES=20` | Default frame sampling interval and per-request upload guardrail (adjustable `1–500` in Settings). |
-
----
-
-## Plugin & REST API
-
-Create scoped Bearer API tokens in **Settings → Plugin API Tokens** to integrate bots, browser extensions, or external pipelines via `/api/v1/*`:
+### Verification & Tests
 
 ```bash
-# Semantic search via Bearer token
-curl -X POST http://127.0.0.1:8008/api/v1/search \
-  -H "Authorization: Bearer <YOUR_API_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "redwood forest sunlight", "top_n": 10}'
-```
-
----
-
-## Testing & Verification
-
-```bash
-# Backend unit & integration tests
-cd backend
-pytest -q
-
-# Frontend TypeScript check, Vite production bundle & auth tests
-cd web
-npm run build
-npm test
-```
-
----
-
-## Project Structure
-
-```text
-Cinevec/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                        # FastAPI entrypoint, API routes & static serving
-│   │   ├── application/
-│   │   │   ├── lifecycle_service.py       # Exclude, restore & vector-first safe purge
-│   │   │   ├── pipeline_service.py        # 4-stage worker orchestration & checkpointing
-│   │   │   └── search_service.py          # Multimodal & subtitle fusion retrieval
-│   │   ├── milvus.py                      # Milvus REST v2 client & collection schema
-│   │   ├── embeddings.py                  # EmbeddingGemma 2 HTTP & Chinese-CLIP encoders
-│   │   ├── video.py                       # FFmpeg keyframe sampling & quality filters
-│   │   └── storage.py                     # S3 / MinIO adapter
-│   └── tests/                             # Pytest suite
-├── web/
-│   ├── src/
-│   │   ├── cinema/                        # Three.js 3D Carousel, ArcIndicator, ScreeningRoom
-│   │   ├── pages/                         # Explore, Library, Activity, Settings, Login
-│   │   ├── components/                    # Layout HUD, AddFlow, ConnectDrive, Lightbox
-│   │   └── i18n.tsx                       # Bilingual EN / 中文 provider
-│   └── package.json
-├── docs/images/                           # Verified README screenshots
-└── .env.example                           # Annotated environment template
+cd backend && pytest -q
+cd web && npm run build && npm test
 ```

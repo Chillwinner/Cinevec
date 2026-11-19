@@ -8,6 +8,7 @@ import { useI18n } from "../i18n";
 import { EASE } from "../motion";
 import AboutSystemDrawer from "../cinema/AboutSystemDrawer";
 import Preloader from "../cinema/Preloader";
+import OnboardingTour, { ONBOARDING_STORAGE_KEY } from "./OnboardingTour";
 import RebuildFab from "./RebuildFab";
 import type { SystemStatus } from "../types";
 
@@ -18,16 +19,40 @@ export default function Layout() {
   const { lang, toggleLang, t } = useI18n();
 
   const links = [
-    { to: "/", label: t("Explore", "探索"), end: true },
-    { to: "/library", label: t("Library", "资料库"), end: false },
-    { to: "/activity", label: t("Activity", "仪表盘"), end: false },
-    { to: "/settings", label: t("Settings", "设置"), end: false },
+    { to: "/", label: t("Explore", "探索"), end: true, tour: "nav-explore" },
+    { to: "/library", label: t("Library", "资料库"), end: false, tour: "nav-library" },
+    { to: "/activity", label: t("Activity", "仪表盘"), end: false, tour: "nav-activity" },
+    { to: "/settings", label: t("Settings", "设置"), end: false, tour: "nav-settings" },
   ];
 
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [assetTotal, setAssetTotal] = useState<number | null>(null);
   const [systemReady, setSystemReady] = useState(false);
+
+  useEffect(() => {
+    if (!authReady || !systemReady) return;
+    try {
+      const done = window.localStorage.getItem(ONBOARDING_STORAGE_KEY);
+      if (!done) {
+        setTourOpen(true);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [authReady, systemReady]);
+
+  const closeTour = (markDone: boolean) => {
+    setTourOpen(false);
+    if (markDone) {
+      try {
+        window.localStorage.setItem(ONBOARDING_STORAGE_KEY, "1");
+      } catch {
+        // ignore storage errors
+      }
+    }
+  };
 
   const isCinemaHome = location.pathname === "/";
 
@@ -80,6 +105,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.end}
+              data-tour={item.tour}
               className={({ isActive }) => `cinema-nav-link${isActive ? " active" : ""}`}
             >
               {item.label}
@@ -108,6 +134,15 @@ export default function Layout() {
             aria-label={t("Switch language", "切换语言")}
           >
             {lang === "en" ? "中文" : "EN"}
+          </button>
+
+          <button
+            type="button"
+            className={`cinema-about-btn${tourOpen ? " active" : ""}`}
+            onClick={() => setTourOpen(true)}
+            title={t("Open onboarding guide", "打开新手引导")}
+          >
+            {t("GUIDE", "引导")}
           </button>
 
           <button
@@ -142,6 +177,8 @@ export default function Layout() {
         status={status}
         assetTotal={assetTotal}
       />
+
+      <OnboardingTour open={tourOpen} status={status} onClose={closeTour} />
     </div>
   );
 }

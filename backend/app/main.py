@@ -35,6 +35,7 @@ from app.infra.sampler import FFmpegFrameSampler
 from app.infra.sqlite_repos import SqliteMetadataRepository, SqliteTaskRepository
 from app.application.index_write_service import IndexWriteService
 from app.infra.encoders import PathBlockedEncoder
+from app.infra.milvus_lite import MilvusLiteIndex
 from app.infra.milvus_rest import MilvusRestIndex
 from app.infra.model_space import space_from_settings
 from app.application.rebuild_service import RebuildService
@@ -79,15 +80,31 @@ def _milvus_token(settings: Settings) -> str | None:
 def build_vector_index(settings: Settings, override=None):
     if override is not None:
         return override
+    backend_kind = (settings.milvus_backend or "").strip().lower()
     uri = (settings.milvus_uri or "").strip()
-    if not uri:
-        return UnconfiguredVectorIndex()
+    is_lite = backend_kind == "lite" or (
+        bool(uri) and not uri.startswith(("http://", "https://")) and uri.endswith(".db")
+    )
     space = space_from_settings(settings)
     family = normalize_family(settings.model_family)
     contract = (settings.encoder_contract_status or "").strip()
     auto_create = True
     if family == FAMILY_EMBEDDINGGEMMA2 and contract != "verified":
         auto_create = False
+    if is_lite:
+        lite_raw = Path(uri) if (uri and not uri.startswith(("http://", "https://"))) else settings.milvus_lite_path
+        lite_path = _resolve_under_backend(lite_raw)
+        return MilvusLiteIndex(
+            lite_path,
+            profile=settings.vector_profile or "default",
+            model_id=settings.model_id or "unset",
+            model_version=settings.model_version or "unset",
+            dim=settings.model_dim,
+            preprocess_version=(space.preprocess_version if space else (settings.preprocess_version or "")),
+            auto_create=auto_create,
+        )
+    if not uri:
+        return UnconfiguredVectorIndex()
     return MilvusRestIndex(
         uri,
         token=_milvus_token(settings),
@@ -299,6 +316,25 @@ def build_container(
     store = build_file_store(metadata, file_store)
     frame_sampler = sampler or FFmpegFrameSampler(settings)
     sources = SourceService(metadata, reader)
+    if (
+        settings.auto_init_platform_storage
+        and metadata.get_platform_storage() is None
+        and settings.s3_endpoint
+        and settings.s3_bucket
+    ):
+        try:
+            sources.create(
+                name="MinIO Platform Storage",
+                endpoint=settings.s3_endpoint,
+                bucket=settings.s3_bucket,
+                region=settings.s3_region or "us-east-1",
+                role="storage",
+                is_platform_storage=True,
+                access_key=settings.s3_access_key,
+                secret_key=settings.s3_secret_key,
+            )
+        except Exception:
+            pass
     imports = ImportService(metadata, tasks)
     tags = TagService(metadata)
     app_settings = SettingsService(metadata, settings, store)

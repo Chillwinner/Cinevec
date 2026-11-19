@@ -1,0 +1,97 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${PICA_S3_BUCKET:-cinevec-media}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing \"local/$MINIO_BUCKET\" &&
+      echo 'MinIO bucket ready.'
+      "
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      PICA_HOST: 0.0.0.0
+      PICA_PORT: 8008
+      PICA_SQLITE_PATH: data/pica.db
+      PICA_WORK_DIR: data/work
+      PICA_WORKER_ENABLED: "true"
+      # 内置 Milvus Lite 本地文件向量库，无需额外部署 Milvus / etcd 集群
+      PICA_MILVUS_BACKEND: ${PICA_MILVUS_BACKEND:-lite}
+      PICA_MILVUS_LITE_PATH: ${PICA_MILVUS_LITE_PATH:-data/milvus_lite.db}
+      PICA_MILVUS_URI: ${PICA_MILVUS_URI:-}
+      # 自动连接并初始化内置 MinIO 平台存储桶
+      PICA_AUTO_INIT_PLATFORM_STORAGE: "true"
+      PICA_S3_ENDPOINT: ${PICA_S3_ENDPOINT:-http://minio:9000}
+      PICA_S3_REGION: ${PICA_S3_REGION:-us-east-1}
+      PICA_S3_BUCKET: ${PICA_S3_BUCKET:-cinevec-media}
+      PICA_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      PICA_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # 多模态编码模型配置（在 .env 中填入你的 HTTP 编码服务地址）
+      PICA_ENCODER_BACKEND: ${PICA_ENCODER_BACKEND:-remote_http}
+      PICA_CLIP_HTTP_BASE_URL: ${PICA_CLIP_HTTP_BASE_URL:-}
+      PICA_CLIP_HTTP_TIMEOUT_SECONDS: ${PICA_CLIP_HTTP_TIMEOUT_SECONDS:-60}
+      PICA_MODEL_FAMILY: ${PICA_MODEL_FAMILY:-embeddinggemma2}
+      PICA_MODEL_ARCHITECTURE: ${PICA_MODEL_ARCHITECTURE:-google/embeddinggemma-2}
+      PICA_MODEL_ID: ${PICA_MODEL_ID:-embeddinggemma-2}
+      PICA_MODEL_VERSION: ${PICA_MODEL_VERSION:-v1}
+      PICA_MODEL_DIM: ${PICA_MODEL_DIM:-768}
+      PICA_PREPROCESS_VERSION: ${PICA_PREPROCESS_VERSION:-full_frame_passthrough_v1}
+      PICA_ENCODER_CONTRACT_STATUS: ${PICA_ENCODER_CONTRACT_STATUS:-verified}
+      PICA_TASK_PREFIX_APPLIED_BY: ${PICA_TASK_PREFIX_APPLIED_BY:-server}
+      PICA_SAMPLE_INTERVAL_SECONDS: ${PICA_SAMPLE_INTERVAL_SECONDS:-5.0}
+      PICA_MAX_UPLOAD_FILES: ${PICA_MAX_UPLOAD_FILES:-20}
+      PICA_AUTH_ENABLED: ${PICA_AUTH_ENABLED:-false}
+      PICA_JWT_SECRET: ${PICA_JWT_SECRET:-}
+    ports:
+      - "${CINEVEC_API_PORT:-8008}:8008"
+    volumes:
+      - cinevec_data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "${CINEVEC_WEB_PORT:-5174}:80"
+    restart: unless-stopped
+
+volumes:
+  minio_data:
+  cinevec_data:

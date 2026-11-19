@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     s3_secret_key: str | None = None
     s3_bucket: str | None = None
     s3_region: str | None = None
+    auto_init_platform_storage: bool = False
 
+    milvus_backend: str = ""
+    milvus_lite_path: Path = Field(default=Path("data/milvus_lite.db"))
     milvus_uri: str | None = None
     milvus_token: str | None = None
     milvus_user: str | None = None

@@ -482,7 +482,7 @@ export default function SearchPage() {
         </div>
 
         <div className="stage-hud-right">
-          <div className="view-mode-switch" role="group" aria-label={t("View mode", "视图切换")}>
+          <div className="view-mode-switch" data-tour="view-toggle" role="group" aria-label={t("View mode", "视图切换")}>
             <button
               type="button"
               className={viewMode === "cinema" ? "active" : ""}
@@ -706,7 +706,7 @@ export default function SearchPage() {
         </AnimatePresence>
 
         <form className="director-dock" onSubmit={onSubmit} onPointerMove={spotlight}>
-          <div className="dock-mode-tabs" role="tablist" aria-label={t("Search mode", "检索模式")}>
+          <div className="dock-mode-tabs" data-tour="search-modes" role="tablist" aria-label={t("Search mode", "检索模式")}>
             <button
               type="button"
               role="tab"
@@ -748,7 +748,7 @@ export default function SearchPage() {
           <div className="dock-divider" />
 
           {mode === "image" ? (
-            <div className="dock-input-area">
+            <div className="dock-input-area" data-tour="search-input">
               {imagePreview ? (
                 <img className="dock-query-thumb" src={imagePreview} alt="" />
               ) : (
@@ -772,7 +772,7 @@ export default function SearchPage() {
               ) : null}
             </div>
           ) : (
-            <div className="dock-input-area">
+            <div className="dock-input-area" data-tour="search-input">
               <span className="dock-query-icon">
                 <MagnifyingGlass size={17} />
               </span>
@@ -822,6 +822,7 @@ export default function SearchPage() {
             <button
               type="button"
               className="dock-add-btn"
+              data-tour="import-btn"
               onClick={() => setAddOpen(true)}
               title={t("Import from MinIO or upload new media", "导入 MinIO 资源或上传新媒体")}
             >
