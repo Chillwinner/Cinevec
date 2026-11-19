@@ -12,7 +12,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
-import { useI18n, type Lang } from "../i18n";
+import { translate, useI18n, type Lang } from "../i18n";
 import PreviewLightbox, { type PreviewTarget } from "../components/PreviewLightbox";
 import { AnimatedNumber, Banner, Empty, PageHead, Pill, Portal, Segmented } from "../components/ui";
 import { EASE, softSpring, spring } from "../motion";
@@ -25,9 +25,9 @@ function titleOf(asset: Asset) {
 }
 
 function originLabel(asset: Asset, lang: Lang) {
-  if (asset.origin === "hosted") return lang === "en" ? "Hosted upload" : "电脑上传托管";
-  if (asset.source_url) return lang === "en" ? "External URL" : "外部网址引用";
-  return lang === "en" ? "Bucket reference" : "网盘引用";
+  if (asset.origin === "hosted") return translate(lang, "Hosted upload", "电脑上传托管");
+  if (asset.source_url) return translate(lang, "External URL", "外部网址引用");
+  return translate(lang, "Bucket reference", "网盘引用");
 }
 
 const PAGE = 48;

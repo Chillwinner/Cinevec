@@ -25,7 +25,8 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
-import { useI18n, type Lang } from "../i18n";
+import { translate, useI18n, type Lang } from "../i18n";
+import { SEARCH_EXAMPLES } from "../i18nDict";
 import ArcIndicator from "../cinema/ArcIndicator";
 import CinemaCarousel, { type CinemaCarouselHandle, type CinemaSlideItem } from "../cinema/CinemaCarousel";
 import ScreeningRoom, { type ScreeningTarget } from "../cinema/ScreeningRoom";
@@ -39,22 +40,17 @@ type HitFilter = "all" | "image" | "video" | "subtitle";
 type ViewMode = "cinema" | "grid";
 
 function getSourceLabel(lang: Lang, key: string) {
-  const isEn = lang === "en";
-  const map: Record<string, string> = {
-    visual: isEn ? "Visual" : "画面",
-    subtitle: isEn ? "Subtitle" : "字幕",
-    mixed: isEn ? "Visual + Subtitle" : "画面 + 字幕",
-    visual_only: isEn ? "Visual only" : "仅画面",
-    subtitle_only: isEn ? "Subtitle only" : "仅字幕",
-    visual_and_subtitle: isEn ? "Visual + Subtitle" : "画面 + 字幕",
+  const map: Record<string, [string, string]> = {
+    visual: ["Visual", "画面"],
+    subtitle: ["Subtitle", "字幕"],
+    mixed: ["Visual + Subtitle", "画面 + 字幕"],
+    visual_only: ["Visual only", "仅画面"],
+    subtitle_only: ["Subtitle only", "仅字幕"],
+    visual_and_subtitle: ["Visual + Subtitle", "画面 + 字幕"],
   };
-  return map[key] || key;
+  const pair = map[key];
+  return pair ? translate(lang, pair[0], pair[1]) : key;
 }
-
-const textExamplesEn = ["sunset by the sea", "elephant", "lit street in the rain", "oranges on kitchen table"];
-const textExamplesZh = ["海边的黄昏", "大象", "雨里亮着灯的街", "厨房桌上的橘子"];
-const lexicalExamplesEn = ["IMG_2043", "birthday", "mp4"];
-const lexicalExamplesZh = ["IMG_2043", "生日", "mp4"];
 
 function fileName(item: { display_name?: string; object_key: string }) {
   return item.display_name || item.object_key.split("/").pop() || item.object_key;
@@ -785,12 +781,8 @@ export default function SearchPage() {
                 <RotatingPlaceholder
                   examples={
                     mode === "lexical"
-                      ? lang === "en"
-                        ? lexicalExamplesEn
-                        : lexicalExamplesZh
-                      : lang === "en"
-                        ? textExamplesEn
-                        : textExamplesZh
+                      ? SEARCH_EXAMPLES[lang].lexical
+                      : SEARCH_EXAMPLES[lang].text
                   }
                 />
               ) : (

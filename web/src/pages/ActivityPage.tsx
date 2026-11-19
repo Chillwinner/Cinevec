@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { ArrowsClockwise, CaretDown, CaretUp, Cpu, GraphicsCard, Memory, X } from "@phosphor-icons/react";
 import { api } from "../api";
 import { AnimatedNumber, Banner, PageHead, Pill } from "../components/ui";
-import { useI18n } from "../i18n";
+import { translate, useI18n, type Lang } from "../i18n";
 import { EASE, spring } from "../motion";
 import type { DashboardResponse, DashboardStage, JobCard, ResourceBlock } from "../types";
 
@@ -121,9 +121,9 @@ function JobCardView({ job, onRetry }: { job: JobCard; onRetry: (id: string) => 
   );
 }
 
-function statusLabel(job: JobCard, lang: "en" | "zh"): string {
+function statusLabel(job: JobCard, lang: Lang): string {
   if (job.job_type === "register_asset" && job.status === "completed") {
-    return lang === "zh" ? "仅登记完成" : "Registered";
+    return translate(lang, "Registered", "仅登记完成");
   }
   const labels: Record<JobCard["status"], [string, string]> = {
     waiting: ["Queued", "排队"],
@@ -134,11 +134,11 @@ function statusLabel(job: JobCard, lang: "en" | "zh"): string {
     failed: ["Failed", "失败"],
   };
   const pair = labels[job.status];
-  return lang === "zh" ? pair[1] : pair[0];
+  return translate(lang, pair[0], pair[1]);
 }
 
-function fileName(job: JobCard, lang: "en" | "zh") {
-  const fallback = lang === "zh" ? "文件" : "File";
+function fileName(job: JobCard, lang: Lang) {
+  const fallback = translate(lang, "File", "文件");
   return String(job.object_key || job.asset_id || fallback).split(/[\\/]/).pop() || fallback;
 }
 
@@ -160,7 +160,7 @@ const TIMING_LABELS: Record<string, [string, string]> = {
   activate: ["Activate", "激活"],
 };
 
-function formatTimings(timings: NonNullable<JobCard["timings"]>, lang: "en" | "zh") {
+function formatTimings(timings: NonNullable<JobCard["timings"]>, lang: Lang) {
   const isZh = lang === "zh";
   return Object.entries(timings)
     .map(([key, value]) => {
@@ -408,7 +408,7 @@ export default function ActivityPage() {
     () => sortJobs(selectedStageData?.jobs ?? []),
     [selectedStageData],
   );
-  const colLabel = (col: (typeof COLUMNS)[number]) => (lang === "zh" ? col.labelZh : col.labelEn);
+  const colLabel = (col: (typeof COLUMNS)[number]) => translate(lang, col.labelEn, col.labelZh);
 
   return (
     <div>

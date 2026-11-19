@@ -1,17 +1,33 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { I18N_DICT } from "./i18nDict";
 
-export type Lang = "en" | "zh";
+export type Lang = "en" | "zh" | "ja" | "ko" | "es";
 
+export const SUPPORTED_LANGS: { code: Lang; label: string; htmlLang: string }[] = [
+  { code: "en", label: "EN", htmlLang: "en" },
+  { code: "zh", label: "中文", htmlLang: "zh-CN" },
+  { code: "ja", label: "日本語", htmlLang: "ja" },
+  { code: "ko", label: "한국어", htmlLang: "ko" },
+  { code: "es", label: "ES", htmlLang: "es" },
+];
+
+const VALID_LANGS = new Set<string>(SUPPORTED_LANGS.map((l) => l.code));
 const STORAGE_KEY = "cinevec_lang";
 
 function readInitialLang(): Lang {
   try {
     const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved === "zh" || saved === "en") return saved;
+    if (saved && VALID_LANGS.has(saved)) return saved as Lang;
   } catch {
     // ignore storage errors
   }
   return "en";
+}
+
+export function translate(lang: Lang, en: string, zh: string): string {
+  if (lang === "en") return en;
+  if (lang === "zh") return zh;
+  return I18N_DICT[en]?.[lang] ?? en;
 }
 
 type I18nContextValue = {
@@ -41,14 +57,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleLang = useCallback(() => {
-    setLang(lang === "en" ? "zh" : "en");
+    const idx = SUPPORTED_LANGS.findIndex((l) => l.code === lang);
+    const next = SUPPORTED_LANGS[(idx + 1) % SUPPORTED_LANGS.length].code;
+    setLang(next);
   }, [lang, setLang]);
 
   useEffect(() => {
-    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    const meta = SUPPORTED_LANGS.find((l) => l.code === lang);
+    document.documentElement.lang = meta?.htmlLang ?? "en";
   }, [lang]);
 
-  const t = useCallback((en: string, zh: string) => (lang === "zh" ? zh : en), [lang]);
+  const t = useCallback((en: string, zh: string) => translate(lang, en, zh), [lang]);
 
   const value = useMemo(() => ({ lang, setLang, toggleLang, t }), [lang, setLang, toggleLang, t]);
 

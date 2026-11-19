@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { SignOut } from "@phosphor-icons/react";
 import { useAuth } from "../AuthContext";
 import { api } from "../api";
-import { useI18n } from "../i18n";
+import { SUPPORTED_LANGS, useI18n, type Lang } from "../i18n";
 import { EASE } from "../motion";
 import AboutSystemDrawer from "../cinema/AboutSystemDrawer";
 import Preloader from "../cinema/Preloader";
@@ -16,7 +16,7 @@ export default function Layout() {
   const outlet = useOutlet();
   const location = useLocation();
   const { auth, username, ready: authReady, logout } = useAuth();
-  const { lang, toggleLang, t } = useI18n();
+  const { lang, setLang, t } = useI18n();
 
   const links = [
     { to: "/", label: t("Explore", "探索"), end: true, tour: "nav-explore" },
@@ -126,15 +126,19 @@ export default function Layout() {
             </button>
           ) : null}
 
-          <button
-            type="button"
-            className="cinema-about-btn"
-            onClick={toggleLang}
-            title={t("Switch to Chinese", "切换到 English")}
+          <select
+            className="cinema-lang-select"
+            value={lang}
+            onChange={(e) => setLang(e.target.value as Lang)}
             aria-label={t("Switch language", "切换语言")}
+            title={t("Switch language", "切换语言")}
           >
-            {lang === "en" ? "中文" : "EN"}
-          </button>
+            {SUPPORTED_LANGS.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.label}
+              </option>
+            ))}
+          </select>
 
           <button
             type="button"
@@ -150,7 +154,7 @@ export default function Layout() {
             className={`cinema-about-btn${aboutOpen ? " active" : ""}`}
             onClick={() => setAboutOpen(true)}
           >
-            ABOUT
+            {t("ABOUT", "关于")}
           </button>
         </div>
       </header>

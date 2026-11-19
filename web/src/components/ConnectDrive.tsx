@@ -2,7 +2,7 @@ import { motion } from "motion/react";
 import { FormEvent, useEffect, useState } from "react";
 import { CloudArrowUp, X } from "@phosphor-icons/react";
 import { api } from "../api";
-import { useI18n, type Lang } from "../i18n";
+import { translate, useI18n, type Lang } from "../i18n";
 import { modal as modalVariants, overlay as overlayVariants } from "../motion";
 import type { Source } from "../types";
 import { Portal } from "./ui";
@@ -19,9 +19,9 @@ const emptyForm = {
 };
 
 export function probeLabel(source: Source, lang: Lang = "en") {
-  if (source.last_probe_status === "ok") return lang === "en" ? "Connected" : "已连上";
-  if (source.last_probe_status === "failed") return lang === "en" ? "Failed" : "没连上";
-  return lang === "en" ? "Not tested" : "还没试过连接";
+  if (source.last_probe_status === "ok") return translate(lang, "Connected", "已连上");
+  if (source.last_probe_status === "failed") return translate(lang, "Failed", "没连上");
+  return translate(lang, "Not tested", "还没试过连接");
 }
 
 export default function ConnectDrive({

@@ -73,7 +73,7 @@ export default function ScreeningRoom({
   onClose: () => void;
   onSearchSimilar?: (file: File) => void;
 }) {
-  const { lang, t } = useI18n();
+  const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [mediaError, setMediaError] = useState(false);
   const [hdReady, setHdReady] = useState(false);
@@ -479,7 +479,7 @@ export default function ScreeningRoom({
                     <strong>{target.score.toFixed(4)}</strong>
                     <span>
                       {(hitMethodMap[target.hitSource || ""] &&
-                        (lang === "zh" ? hitMethodMap[target.hitSource || ""][1] : hitMethodMap[target.hitSource || ""][0])) ||
+                        t(hitMethodMap[target.hitSource || ""][0], hitMethodMap[target.hitSource || ""][1])) ||
                         target.hitSource ||
                         t("Vector Search", "向量检索")}
                     </span>
