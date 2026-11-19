@@ -15,7 +15,7 @@
 [![React + Three.js](https://img.shields.io/badge/React%2019-Three.js%20WebGL-111111?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
 [![MinIO / S3](https://img.shields.io/badge/Storage-S3%20%2F%20MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)](https://min.io/)
 
-[能做什么](#它能做什么) • [界面预览](#界面预览) • [核心优势](#为什么选-cinevec相较同类的优点) • [插件与 CineGram](#插件生态与-cinegram) • [替换底层组件](#如何替换向量库模型或存储) • [快速部署](#快速部署教程)
+[能做什么](#它能做什么) • [界面预览](#界面预览) • [核心优势](#为什么选-cinevec相较同类的优点) • [推荐配置与模型选型](#推荐配置与为什么默认选-embeddinggemma-2) • [插件与 CineGram](#插件生态与-cinegram) • [乐高式解耦架构](#真正解耦像拼乐高一样自由拼装组件) • [快速部署与改写 Compose](#快速部署与自定义-docker-composeyml)
 
 </div>
 
@@ -27,7 +27,7 @@
 
 - **三合一导演搜索栏**：自然语言以文搜画面（如“雨里亮着灯的街”）、直接拖图以图搜镜头、以及按文件名/标签/描述文案的毫秒级模糊检索。
 - **时间戳直跳放映室**：点开命中的视频直接定位到对应关键帧秒数，配套关键帧胶片条、自定义封面与 `.srt/.vtt/.ass` 字幕时间轴。
-- **首次启动交互式新手引导**：初次打开自动弹出配置体检大弹窗 + 贴边聚光灯气泡导览，手把手告诉你先配什么、每个按钮干嘛用。
+- **五语界面 + 首次启动交互引导**：Web 端原生支持 `English / 简体中文 / 日本語 / 한국어 / Español`（默认英文，`localStorage` 自动记住上次语言），首次启动自动弹出配置体检大弹窗与贴边聚光灯气泡教程，新人也能一眼上手。
 
 ---
 
@@ -71,16 +71,43 @@
 
 ## 为什么选 CineVec（相较同类的优点）
 
-市面上的自托管图库要么逼你把几个 TB 的视频再拷贝一份，要么一跑 AI 编码就把硬盘塞爆，要么代码耦合得像一坨意大利面。CineVec 的设计非常克制且实用：
+市面上的自托管图库要么逼你把几个 TB 的视频再拷贝一份，要么一跑 AI 编码就把硬盘塞爆，要么把“某个特定模型 + 某个特定数据库”焊死在一坨代码里。CineVec 选择了一套完全解耦、克制实用的打法：
 
 | 对比维度 | 常见同类图库/片库 | CineVec |
 | :--- | :--- | :--- |
-| **存储占用** | 必须把原片完整复制进自己的目录。 | **Zero-Retention 零原片留存**：附带外部 `source_url`，抽完关键帧立刻删原片，只留轻量预览图和向量，几百 GB 片库只占几百 MB 索引空间。 |
+| **存储占用** | 必须把原片完整复制进自己的目录。 | **Zero-Retention 零原片留存**：附带外部 `source_url`，抽完关键帧立刻删临时原片，只留轻量预览图和向量，几百 GB 片库只占几百 MB 索引空间。 |
 | **批量视频防堆积** | 单线程串行，前面一个视频在等 GPU 向量化，后面几十个原视频全堆在硬盘里。 | **双通道并发流水线**：`preprocess`（FFmpeg 抽帧）与 `embed`（向量编码）独立线程解耦，原片抽完立刻销毁，绝不积压。 |
 | **向量库部署成本** | 光起一个 Milvus 集群就得伺候 etcd + MinIO + standalone 一堆容器。 | **开箱内置 Milvus Lite**（Docker Compose 默认单文件向量库），后期需要集群时改一行环境变量即可无缝切 **Milvus REST v2**。 |
+| **模型与组件自由度** | 模型权重硬编码进主后端，换个模型堪比重构。 | **双层乐高解耦**：内置的 `EmbeddingGemma 2` 运行在独立 HTTP 容器（`encoder/`），想换模型、搬到远端显卡、或换向量库/存储，全都可以单独拆换。 |
 | **外部对象存储安全** | 容易改动或锁死你的原文件。 | **外部桶严格只读**：只挂载不改写；排除素材时「先删向量、再清预览」，绝不动外部原片。 |
-| **插件扩展能力** | 只能手动点网页上传。 | **原生插件 API（`/api/v1/*`）**：支持签发独立 Bearer Token，内置批次进度、去重 `ref_id` 与来源失效状态回写，**任何人都可以用任何语言写自己的插件**。 |
-| **交互体验** | 传统静态缩略图网格。 | **Three.js 3D 影院走廊** + 双语界面（`EN / 中文`）+ 首次启动大弹窗与贴边小气泡引导。 |
+| **插件与交互体验** | 手动网页上传 + 静态表格。 | **原生插件 API（`/api/v1/*`）** + **Three.js 3D 影院走廊** + **5 语自由切换** + 首次启动向导弹窗。 |
+
+---
+
+## 推荐配置与为什么默认选 `EmbeddingGemma 2`
+
+### 推荐硬件配置表
+
+| 档位 | CPU / 显卡 / 内存 | 磁盘建议 | 适用场景 | 推荐部署方式 |
+| :--- | :--- | :--- | :--- | :--- |
+| **入门尝鲜（纯 CPU）** | 4 核 CPU · 8 GB 内存 | 20 GB SSD | 几千张图/短视频测试、无显卡小鸡 | 直接 `docker compose up -d`（可设 `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu` 瘦身镜像） |
+| **日常主力（强烈推荐）** | 6 核+ · **NVIDIA 显卡（6–8 GB 显存）** 或 **Apple Silicon（16 GB+ 统一内存）** · 16 GB 内存 | 50 GB+ NVMe | 流畅批量视频抽帧 + 毫秒级语义检索，性价比最高 | Linux/Win 显卡：`docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`；Mac 建议宿主机原生跑 `encoder/server.py` 开启 **MPS** |
+| **团队 / 大规模片库** | 8 核+ · RTX 3080/4080+（10–24 GB 显存） · 32 GB+ 内存 | 200 GB+ NVMe | 十万级以上帧向量、多插件并发接入 | 将 `encoder` 放到独立显卡服务器，后端改用外置 **Milvus REST v2** 集群 |
+
+### 为什么默认采用 `google/embeddinggemma-2`？
+
+在踩过传统 CLIP 各种“中文变文盲、多语要装好几套模型、图片强制被中心裁剪”的坑之后，我们最终将 **`google/embeddinggemma-2`** 设为默认主力编码器：
+
+1. **模块化瘦身，激活仅 ~440M 参数（不吃显存也能跑）**：
+   完整模型共 740M 参数（270M 文本骨干 + 170M 视觉塔 + 300M 音频塔）。而 CineVec 检索的是图片、视频关键帧和 `.srt/.vtt/.ass` 字幕文本，内置编码服务默认开启 `EMBED_DISABLE_AUDIO=true`（传 `config_kwargs={"audio_config": None}`），启动时直接跳过 300M 音频塔！消费级甜品卡、MacBook、甚至纯 CPU 机器都能轻松带得动。
+2. **百种语言共享同一个 768 维向量空间**：
+   中文搜英文台词、英文搜日韩片名、或者中英混输（如 *“海边的 sunset 镜头”*），全部落在同一套 768 维向量空间里，再也不用为中英文分别部署两套模型。
+3. **整帧无损理解（告别暴力中心裁剪）**：
+   老式 CLIP 预处理常把宽银幕电影悄悄居中裁成正方形，画面边缘的人物或字幕直接被切掉。CineVec 通过 `full_frame_passthrough_v1` 将完整画面直接喂给 EmbeddingGemma 2，构图细节一帧不丢。
+4. **8K 超长上下文 + 严格防重加前缀机制**：
+   长文案和整段字幕都能吃得下；同时后端契约明确区分查询前缀（`task: search result | query: `）与文档前缀（`title: ... | text: `），`encoder/server.py` 保证**有且仅加一次前缀**，图片请求零干扰。
+5. **Apache 2.0 开源协议 + 精度安全防护**：
+   商用自托管无顾虑；针对 EmbeddingGemma 2 在 `float16` 下会数值溢出的特性，编码服务主动禁用 fp16，自动选用 **`bfloat16`**（支持的 CUDA 显卡）或 **`float32`**。
 
 ---
 
@@ -94,36 +121,49 @@ CineVec 本体只专注做好「多模态检索与媒资中枢」，所有外部
 
 > **项目地址**：[https://github.com/Chillwinner/CineGram](https://github.com/Chillwinner/CineGram)
 
-- **MTProto 用户号 & Bot 均完全可选**：独立轻量 FastAPI + Web 管理台，可按需运行仅 Web、仅 Bot、仅用户号或双模并行。
+- **MTProto 用户号 & Bot 均完全可选**：独立轻量 FastAPI + 5 语 Web 管理台，可按需运行仅 Web、仅 Bot、仅用户号或双模并行。
 - **精细化筛选导入**：支持按群配置过滤规则（仅视频/仅图、大小/时长阈值、关键词/屏蔽词、回溯天数），还支持**在网页里先看群消息缩略图，打勾只导入想要的那几条**。
 - **相册整组文案与 `#标签` 继承**：解决 Telegram 一条相册发多图只把文案挂在第 1 张的痛点，自动广播给同组所有文件，搜标签和模糊搜话里的词一条不漏。
 - **定时存活巡检**：自动探测群改名、公开群转私密、被踢出或单条消息被删，自动刷新跳转链接或回写 `source_invalid` 状态。
 
-你也可以照着 `/api/v1/*` 轻松写出自己的 Discord / 浏览器收藏夹 / NAS 监听插件，完全无需修改 CineVec 本体代码。
+你也可以照着 `/api/v1/*` 轻松写出自己的 Discord / Obsidian / 浏览器收藏夹 / NAS 监听插件，完全无需修改 CineVec 本体代码。
 
 ---
 
-## 如何替换向量库、模型或存储
+## 真正解耦：像拼乐高一样自由拼装组件
 
-CineVec 后端采用标准的**六边形架构（Ports & Adapters）**，核心业务层（`backend/app/application/`）完全不直接依赖 Milvus、MinIO 或某个特定模型，只面向 [`backend/app/domain/ports.py`](backend/app/domain/ports.py) 中定义的 `Protocol` 接口编程。
+CineVec 在**容器服务层**与**后端代码层**做了彻底的双向解耦——所有核心部件都是可插拔的积木，没有任何“绑死某一家”的设计：
 
-### 1. 内置已支持的切换（零代码，改 `.env` 即可）
-- **向量库**：`Milvus Lite`（`PICA_MILVUS_BACKEND=lite`） ↔ 远端 `Milvus REST v2`（`PICA_MILVUS_URI=http://...`）
-- **编码模型**：`EmbeddingGemma 2`（HTTP） ↔ `Chinese-CLIP`（HTTP 或本地 ONNX）
-- **对象存储**：MinIO / AWS S3 / Cloudflare R2 / 阿里云 OSS（任意 S3 兼容协议）
+### 第一层：容器与服务解耦（独立块，按需拆装）
 
-### 2. 如果想换成 Qdrant、pgvector、Weaviate 或自研模型，需要自己实现接口吗？
-**需要，但非常轻松——只需实现对应 `Protocol` 并在工厂函数里接上即可（共 2 处，业务流水线和前端一行不用改）：**
+```text
+  [ web (Nginx + 3D 前端 :5174) ]
+                │  /api 反向代理
+                ▼
+  [ backend (FastAPI :8008) + 内置 Milvus Lite ]
+        ├──► HTTP /api/v1/embed/* ──► [ encoder (EmbeddingGemma 2 :8001) ]  <-- 可单独替换/搬去外置显卡机
+        └──► S3 协议               ──► [ minio (:9000) ]                     <-- 可随时换 AWS S3 / R2 / OSS
+```
+
+特别说明：`docker-compose.yml` 中 `backend` **刻意不写死 `depends_on: encoder`** —— 一方面让 Web 管理台秒开不卡顿，另一方面哪怕你删掉或停掉 `encoder` 容器、改接外部模型，整个编排依然丝滑启动。
+
+### 第二层：代码六边形架构（Ports & Adapters）
+
+业务编排层（`backend/app/application/`）只面向 [`backend/app/domain/ports.py`](backend/app/domain/ports.py) 中定义的 `Protocol` 接口编程，不直接 `import` Milvus、MinIO 或 PyTorch：
+
+- **开箱支持零代码切换（改 `.env` 即可）**：
+  - **向量库**：内置 `Milvus Lite`（`PICA_MILVUS_BACKEND=lite`）↔ 远端 `Milvus REST v2`（`PICA_MILVUS_URI=http://...`）
+  - **编码模型**：`EmbeddingGemma 2`（HTTP，768 维）↔ `Chinese-CLIP`（HTTP 或本地 ONNX，512 维）
+  - **对象存储**：MinIO / AWS S3 / Cloudflare R2 / 阿里云 OSS（任意 S3 兼容协议）
+- **想换成 Qdrant、pgvector、Weaviate 或自研模型？** 只需实现对应 `Protocol` 并在 [`backend/app/main.py`](backend/app/main.py) 的工厂函数里接上即可（共 2 处，流水线与 3D 前端一行不用改）：
 
 | 要替换的组件 | 需实现的接口（`backend/app/domain/ports.py`） | 参考实现（`backend/app/infra/`） | 装配入口（`backend/app/main.py`） |
 | :--- | :--- | :--- | :--- |
 | **向量数据库** | `VectorIndex` | `milvus_lite.py` / `milvus_rest.py` | `build_vector_index()` |
 | **图文编码器** | `ImageTextEncoder` | `embeddinggemma_http.py` / `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
-| **字幕编码器** | `SubtitleEncoder` | `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
+| **字幕编码器** | `SubtitleEncoder` | `embeddinggemma_http.py` / `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
 | **平台文件存储** | `FileStore` | `file_store.py` | `build_file_store()` |
 | **只读外部数据源** | `SourceReader` | `s3_reader.py` | `build_container()` |
-
-比如要把向量库换成 **Qdrant** 或 **pgvector**，只需写一个类实现 `VectorIndex` 的 6 个方法：
 
 ```python
 class MyCustomVectorIndex:
@@ -135,53 +175,101 @@ class MyCustomVectorIndex:
     def delete_by_asset(self, asset_id: str, collections: list[str] | None = None) -> VectorDeleteResult: ...
 ```
 
-然后在 [`backend/app/main.py`](backend/app/main.py) 的 `build_vector_index()` 里返回你的实例——搜索聚合、先删向量再清文件的安全删除、多模型空间重建、以及 3D 影院前端全部自动生效。
+同时所有向量严格按 `(profile, model_id, model_version, dim, preprocess_version)` 进行空间隔离，绝不会发生跨模型维度串味，老索引和业务数据随时安全保留。
 
 ---
 
-## 快速部署教程
+## 快速部署与自定义 `docker-compose.yml`
 
-### 方式一：Docker Compose 一键部署（强烈推荐 · 2 分钟跑起）
+### 方式一：Docker Compose 全家桶一键起飞（已内置 EmbeddingGemma 2）
 
-已内置 **MinIO**（自动建 `cinevec-media` 桶并自动登记为平台存储）、**Milvus Lite**（免装独立 Milvus 集群）、**FFmpeg** 与生产版前端：
+已打包 **MinIO**（自动建 `cinevec-media` 桶并登记）、内置 **Milvus Lite**、**EmbeddingGemma 2 独立编码服务**、**FFmpeg** 与生产版 **3D 前端**：
 
 ```bash
 git clone https://github.com/Chillwinner/Cinevec.git
 cd Cinevec
 cp .env.docker.example .env
-# 打开 .env，把 PICA_CLIP_HTTP_BASE_URL 填成你的向量编码服务地址
+
+# 可选：若 Hugging Face 下载 google/embeddinggemma-2 需要授权，在 .env 中填入 HF_TOKEN
+# 可选：国内环境可在 .env 中设置 HF_ENDPOINT=https://hf-mirror.com
+
+# 1. 默认 / CPU 模式一键启动：
 docker compose up -d
+
+# 2. 若主机有 NVIDIA 显卡，叠加 GPU 编排启用 bfloat16 加速：
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-浏览器打开 **http://localhost:5174**，首次进入会自动弹出新手引导，带你检查配置并逐个认识界面按钮。
+浏览器打开 **http://localhost:5174**，首次打开会弹出新手向导检查服务状态并介绍每个按钮的作用（首次启动 `encoder` 会在后台自动拉取模型权重到 `hf_cache` 卷）。
 
-### 方式二：本地手动开发部署
+> 小技巧：如果你只用纯 CPU 跑且想缩小镜像体积，构建前在 `.env` 里取消注释 `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu` 即可。
 
-**环境要求**：Python 3.11+、Node.js 20+、FFmpeg、MinIO/S3 以及向量编码服务。
+---
+
+### 如果你需要自行安装或替换组件，如何修改 `docker-compose.yml`？
+
+#### 场景 1：自备模型服务 / Apple Silicon Mac 原生 MPS 加速 / 接入局域网显卡机
+
+macOS 下的 Docker Desktop 容器拿不到 Apple GPU（MPS），或者你可能已经在另一台有显卡的机器上跑着模型了。拆分只需 3 步：
+
+1. **去掉 `encoder` 容器**：在 [`docker-compose.yml`](docker-compose.yml) 中注释掉（或删掉）`encoder:` 整段；或者直接指定服务名启动其余积木：
+   ```bash
+   docker compose up -d minio minio-init backend web
+   ```
+2. **在宿主机或显卡机原生启动编码服务**（以 Mac 开启 Metal `mps` 为例）：
+   ```bash
+   python3 -m venv .venv-encoder && source .venv-encoder/bin/activate
+   pip install "torch>=2.4.0" -r encoder/requirements.txt
+   EMBED_DEVICE=mps HF_TOKEN=你的HF_TOKEN uvicorn server:app --app-dir encoder --host 0.0.0.0 --port 8001
+   ```
+3. **在 `.env` 把地址指过去**：
+   ```env
+   # 指向当前 Docker 宿主机（如 Mac 原生 MPS）：
+   PICA_CLIP_HTTP_BASE_URL=http://host.docker.internal:8001
+   # 或者指向局域网另一台显卡服务器：
+   # PICA_CLIP_HTTP_BASE_URL=http://192.168.1.50:8001
+   ```
+   *（若改用 **Chinese-CLIP 512 维** HTTP 服务，顺带把 `.env` 中的 `PICA_MODEL_FAMILY=chinese_clip`、`PICA_MODEL_ARCHITECTURE=ViT-B-16`、`PICA_MODEL_ID=chinese-clip-vit-b-16`、`PICA_MODEL_DIM=512`、`PICA_PREPROCESS_VERSION=chinese_clip_official_square_v1` 改好即可。）*
+
+#### 场景 2：不用内置 Milvus Lite，接现成的独立 Milvus 集群
+
+连 `docker-compose.yml` 都不用动，在 `.env` 改两行即切换为分布式 **Milvus REST v2**：
+
+```env
+PICA_MILVUS_BACKEND=rest
+PICA_MILVUS_URI=http://你的Milvus地址:19530
+```
+
+或者把你自己的 Milvus / etcd 服务段贴进 `docker-compose.yml`，然后填 `PICA_MILVUS_URI=http://milvus:19530`。
+
+#### 场景 3：自带对象存储（公司现有 MinIO / AWS S3 / Cloudflare R2 / 阿里云 OSS）
+
+1. 在 [`docker-compose.yml`](docker-compose.yml) 里注释掉 `minio:` 与 `minio-init:` 两个服务，并删掉 `backend:` 下的 `depends_on: minio-init:` 段；
+2. 在 `.env` 填入外部对象存储凭据：
+   ```env
+   PICA_AUTO_INIT_PLATFORM_STORAGE=true
+   PICA_S3_ENDPOINT=https://你的S3端点
+   PICA_S3_REGION=us-east-1
+   PICA_S3_BUCKET=cinevec-media
+   PICA_S3_ACCESS_KEY=你的AccessKey
+   PICA_S3_SECRET_KEY=你的SecretKey
+   ```
+
+---
+
+### 本地手动开发与测试校验
 
 ```bash
-# 1. 配置环境变量（切勿提交 backend/.env 与 backend/data/*.db）
 cp .env.example backend/.env
-
-# 2. 启动后端（8008 端口）——首次启动自动初始化 SQLite 与 Milvus Lite
-cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows PowerShell 用: .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install "pymilvus[milvus_lite]>=2.4.9"   # 如本机使用 Milvus Lite 则安装
+cd backend && python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && pip install "pymilvus[milvus_lite]>=2.4.9"
 uvicorn app.main:app --host 127.0.0.1 --port 8008
 
-# 3. 新开终端启动前端（5174 端口）
-cd web
-npm install
-npm run dev
-```
+# 新开终端启动前端 (5174)
+cd web && npm install && npm run dev
 
-浏览器访问 **http://127.0.0.1:5174** 即可。
-
-### 测试与构建校验
-
-```bash
+# 运行全量校验
 cd backend && pytest -q
+PYTHONPATH=backend:encoder backend/.venv/bin/pytest -q encoder/test_server.py
 cd web && npm run build && npm test
 ```

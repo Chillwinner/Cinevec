@@ -1,4 +1,22 @@
+# =============================================================================
+# CineVec 模块化一键部署编排文件（Docker Compose）
+# 五大解耦积木：minio + minio-init + encoder (EmbeddingGemma 2) + backend + web
+#
+# 如何按需自定义拼装：
+#   - 自备外置/宿主机模型（如 Mac Apple Silicon 原生跑 MPS 或远端 GPU 服务）：
+#     1) 在 .env 中改 PICA_CLIP_HTTP_BASE_URL=http://host.docker.internal:8001
+#     2) 注释掉下方 `encoder:` 服务，或仅启动其余服务：
+#        docker compose up -d minio minio-init backend web
+#   - 启用 NVIDIA GPU 加速：
+#        docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#   - 换用外部 Milvus REST v2 集群：
+#     在 .env 中设置 PICA_MILVUS_BACKEND=rest 与 PICA_MILVUS_URI=http://your-milvus:19530
+#   - 换用外部 S3 / R2 / OSS / 现有 MinIO：
+#     注释掉 `minio:` / `minio-init:` 与 backend.depends_on，并在 .env 填入外部 PICA_S3_*
+# =============================================================================
+
 services:
+  # ---------- 积木 1：对象存储（自备 S3/R2/OSS 时可注释本段及 minio-init） ----------
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -34,6 +52,35 @@ services:
       "
     restart: "no"
 
+  # ---------- 积木 2：多模态编码服务（EmbeddingGemma 2；自备模型时可跳过或注释） ----------
+  encoder:
+    build:
+      context: ./encoder
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-}
+    environment:
+      EMBED_MODEL_ID: ${PICA_MODEL_ARCHITECTURE:-google/embeddinggemma-2}
+      EMBED_DEVICE: ${EMBED_DEVICE:-auto}
+      EMBED_DTYPE: ${EMBED_DTYPE:-auto}
+      EMBED_DISABLE_AUDIO: ${EMBED_DISABLE_AUDIO:-true}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_ENDPOINT: ${HF_ENDPOINT:-}
+      HF_HOME: /cache/huggingface
+    ports:
+      - "${ENCODER_PORT:-8001}:8001"
+    volumes:
+      - hf_cache:/cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+
+  # ---------- 积木 3：CineVec 核心后端 + 内置 Milvus Lite 向量库 ----------
+  # 刻意不强制 depends_on encoder，确保 Web 控制台立即可用，且可随时替换外部模型
   backend:
     build:
       context: ./backend
@@ -47,20 +94,20 @@ services:
       PICA_SQLITE_PATH: data/pica.db
       PICA_WORK_DIR: data/work
       PICA_WORKER_ENABLED: "true"
-      # 内置 Milvus Lite 本地文件向量库，无需额外部署 Milvus / etcd 集群
+      # 默认内置 Milvus Lite 单文件向量库；改 PICA_MILVUS_BACKEND=rest 可无缝切换远端集群
       PICA_MILVUS_BACKEND: ${PICA_MILVUS_BACKEND:-lite}
       PICA_MILVUS_LITE_PATH: ${PICA_MILVUS_LITE_PATH:-data/milvus_lite.db}
       PICA_MILVUS_URI: ${PICA_MILVUS_URI:-}
-      # 自动连接并初始化内置 MinIO 平台存储桶
-      PICA_AUTO_INIT_PLATFORM_STORAGE: "true"
+      # 自动连接并初始化平台存储桶（使用外部 S3 时可按需改为 false 并在前端登记）
+      PICA_AUTO_INIT_PLATFORM_STORAGE: ${PICA_AUTO_INIT_PLATFORM_STORAGE:-true}
       PICA_S3_ENDPOINT: ${PICA_S3_ENDPOINT:-http://minio:9000}
       PICA_S3_REGION: ${PICA_S3_REGION:-us-east-1}
       PICA_S3_BUCKET: ${PICA_S3_BUCKET:-cinevec-media}
-      PICA_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      PICA_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      # 多模态编码模型配置（在 .env 中填入你的 HTTP 编码服务地址）
+      PICA_S3_ACCESS_KEY: ${PICA_S3_ACCESS_KEY:-${MINIO_ROOT_USER:-minioadmin}}
+      PICA_S3_SECRET_KEY: ${PICA_S3_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-minioadmin}}
+      # 默认指向 Compose 内置 EmbeddingGemma 2 容器；换自备模型时只需修改此处地址与契约参数
       PICA_ENCODER_BACKEND: ${PICA_ENCODER_BACKEND:-remote_http}
-      PICA_CLIP_HTTP_BASE_URL: ${PICA_CLIP_HTTP_BASE_URL:-}
+      PICA_CLIP_HTTP_BASE_URL: ${PICA_CLIP_HTTP_BASE_URL:-http://encoder:8001}
       PICA_CLIP_HTTP_TIMEOUT_SECONDS: ${PICA_CLIP_HTTP_TIMEOUT_SECONDS:-60}
       PICA_MODEL_FAMILY: ${PICA_MODEL_FAMILY:-embeddinggemma2}
       PICA_MODEL_ARCHITECTURE: ${PICA_MODEL_ARCHITECTURE:-google/embeddinggemma-2}
@@ -82,6 +129,7 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  # ---------- 积木 4：Nginx + React + Three.js 3D 影院前端 ----------
   web:
     build:
       context: ./web
@@ -95,3 +143,4 @@ services:
 volumes:
   minio_data:
   cinevec_data:
+  hf_cache:

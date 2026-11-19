@@ -1,0 +1,14 @@
+# 可选 NVIDIA GPU 加速覆盖层，配合主编排使用：
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  encoder:
+    environment:
+      EMBED_DEVICE: cuda
+      EMBED_DTYPE: bfloat16
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

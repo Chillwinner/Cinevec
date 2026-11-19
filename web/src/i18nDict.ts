@@ -118,10 +118,10 @@ export const I18N_DICT: Record<string, Record<ExtraLang, string>> = {
     ko: "CineVec에 오신 것을 환영합니다 · 빠른 설정 가이드",
     es: "Bienvenido a CineVec · Guía rápida",
   },
-  "Before searching your media, check the 3 core services below. Docker Compose automatically starts MinIO and embedded Milvus Lite — you only need to point PICA_CLIP_HTTP_BASE_URL to your embedding model.": {
-    ja: "検索を始める前に、以下の 3 つのコアサービス状態を確認してください。Docker Compose なら MinIO と内蔵 Milvus Lite が自動起動するため、PICA_CLIP_HTTP_BASE_URL に埋め込みモデルを設定するだけで使えます。",
-    ko: "미디어를 검색하기 전에 아래 3가지 핵심 서비스 상태를 확인하세요. Docker Compose는 MinIO와 내장 Milvus Lite를 자동 실행하므로 PICA_CLIP_HTTP_BASE_URL만 연결하면 됩니다.",
-    es: "Antes de buscar, comprueba los 3 servicios clave. Docker Compose inicia MinIO y Milvus Lite automáticamente: solo apunta PICA_CLIP_HTTP_BASE_URL a tu modelo de embeddings.",
+  "Before searching your media, check the 3 core services below. Docker Compose automatically starts MinIO, embedded Milvus Lite, and the EmbeddingGemma 2 encoder container (first boot downloads weights into hf_cache) — or point PICA_CLIP_HTTP_BASE_URL anytime to an external GPU or custom model.": {
+    ja: "検索を始める前に、以下の 3 つのコアサービス状態を確認してください。Docker Compose は MinIO、内蔵 Milvus Lite、EmbeddingGemma 2 エンコーダーコンテナを自動起動します（初回起動時は hf_cache にモデルを自動ダウンロード）。PICA_CLIP_HTTP_BASE_URL を変更して外部 GPU や独自モデルに接続することも可能です。",
+    ko: "미디어를 검색하기 전에 아래 3가지 핵심 서비스 상태를 확인하세요. Docker Compose가 MinIO, 내장 Milvus Lite, EmbeddingGemma 2 인코더 컨테이너를 자동 실행하며(최초 실행 시 hf_cache에 가중치 다운로드), PICA_CLIP_HTTP_BASE_URL을 바꿔 외부 GPU나 커스텀 모델로 언제든 전환할 수 있습니다.",
+    es: "Antes de buscar, comprueba los 3 servicios clave. Docker Compose inicia MinIO, Milvus Lite y el contenedor EmbeddingGemma 2 automáticamente (la primera vez descarga los pesos a hf_cache), o apunta PICA_CLIP_HTTP_BASE_URL a una GPU externa o modelo propio.",
   },
   "1. Switch Search Modality": { ja: "1. 検索モードを切り替え", ko: "1. 검색 모드 전환", es: "1. Cambiar modo de búsqueda" },
   "Semantic searches scenes & actions in natural language; Image finds visually similar shots by uploading a reference frame; Lexical matches filenames, tags, and descriptions.": {

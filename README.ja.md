@@ -15,7 +15,7 @@
 [![React + Three.js](https://img.shields.io/badge/React%2019-Three.js%20WebGL-111111?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
 [![MinIO / S3](https://img.shields.io/badge/Storage-S3%20%2F%20MinIO-C72E49?style=for-the-badge&logo=minio&logoColor=white)](https://min.io/)
 
-[機能](#できること) • [スクリーンショット](#ビジュアルショーケース) • [強み](#他ツールとの違い) • [プラグイン & CineGram](#プラグインエコシステム--cinegram) • [バックエンド差し替え](#ベクトル-dbモデルストレージの差し替え) • [クイックスタート](#クイックスタートデプロイ手順)
+[機能](#できること) • [スクリーンショット](#ビジュアルショーケース) • [強み](#他ツールとの違い) • [推奨構成 & EmbeddingGemma 2](#推奨スペックと-embeddinggemma-2-を選ぶ理由) • [プラグイン & CineGram](#プラグインエコシステム--cinegram) • [レゴ式疎結合設計](#完全疎結合モデルベクトル-dbストレージを自由に組み合わせ) • [クイックスタート & Compose カスタマイズ](#クイックスタートと-docker-composeyml-カスタマイズ)
 
 </div>
 
@@ -27,7 +27,7 @@
 
 - **3 つの検索モードを 1 つのドックに集約**：自然言語でのセマンティック検索、参考画像ドロップによる類似フレーム検索、ファイル名・タグ・説明文の高速レキシカル検索。
 - **タイムスタンプ直行スクリーニングルーム**：ヒットした動画は該当キーフレームの秒数から即再生。キーフレームフィルムストリップ、カスタムカバー、`.srt/.vtt/.ass` 字幕タイムラインに対応。
-- **初回起動インタラクティブガイド**：初回アクセス時に設定チェック用モーダル＋各ボタン横のスポットライト解説ツアーが自動起動します。
+- **5 言語 UI ＆ 初回起動インタラクティブガイド**：Web UI は `EN / 中文 / 日本語 / 한국어 / ES` に対応（既定は英語、`localStorage` で選択言語を自動記憶）。初回アクセス時は設定確認モーダル＋各ボタンのスポットライトツアーが自動起動します。
 
 ---
 
@@ -66,11 +66,37 @@
 
 | 機能 | 一般的なギャラリーツール | CineVec |
 | :--- | :--- | :--- |
-| **ストレージ容量** | 元動画を丸ごと複製してディスクを圧迫。 | **Zero-Retention モード**：`source_url` のみ紐づけ、キーフレーム抽出直後に元ファイルを自動削除。軽量プレビューとベクトルだけ保持。 |
-| **大量動画の取り込み** | GPU 推論待ちで前処理が詰まり元動画が堆積。 | **デュアルレーン並列ワーカー**：前処理（FFmpeg）とベクトル化（Embed）を別スレッド化し、抽出後即座に元動画を削除。 |
+| **ストレージ容量** | 元動画を丸ごと複製してディスクを圧迫。 | **Zero-Retention モード**：`source_url` のみ紐づけ、キーフレーム抽出直後に一時元ファイルを削除。軽量プレビューとベクトルだけ保持。 |
+| **大量動画の取り込み** | GPU 推論待ちで前処理が詰まり元動画が堆積。 | **デュアルレーン並列ワーカー**：前処理（FFmpeg）とベクトル化を別スレッド化し、抽出後即座に元動画を削除。 |
 | **ベクトル DB 運用** | Milvus + etcd + MinIO の構築が重い。 | **Milvus Lite 標準内蔵**（Docker Compose は単一ファイル動作）。環境変数 1 つで **Milvus REST v2** クラスタへ移行可能。 |
+| **モデル＆構成の自由度** | 特定モデルが本体コードにベタ書き。 | **二層レゴ式疎結合**：EmbeddingGemma 2 は独立コンテナ（`encoder/`）として分離。他モデルや別マシン GPU へ自由に差し替え可能。 |
 | **外部バケット安全性** | 既存ファイルを移動・改変しがち。 | **読み取り専用マルチバケット**：外部 S3/MinIO は一切変更せず、削除時もベクトル優先パージで整合性を保証。 |
-| **拡張性** | Web 画面からの手動アップロード限定。 | **プラグイン専用 API（`/api/v1/*`）**：Bearer トークン認証で任意の言語から独自プラグインを開発可能。 |
+| **拡張性 & UX** | Web 画面からの手動アップロード限定。 | **プラグイン専用 `/api/v1/*` API** + **3D WebGL シアター** + **5 言語永続化 UI**。 |
+
+---
+
+## 推奨スペックと EmbeddingGemma 2 を選ぶ理由
+
+### 推奨ハードウェア構成
+
+| ティア | CPU / GPU / メモリ | ストレージ | 想定用途 | 推奨起動構成 |
+| :--- | :--- | :--- | :--- | :--- |
+| **エントリー (CPU のみ)** | 4 vCPU · 8 GB RAM | 20 GB SSD | 1 万フレーム未満の小規模検証 | 標準 `docker compose up -d`（軽量化には `.env` で `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu`） |
+| **標準推奨 (快適実用)** | 6 コア以上 · **NVIDIA GPU (6–8 GB VRAM)** または **Apple Silicon (16 GB+ 統合メモリ)** · 16 GB RAM | 50 GB+ NVMe | 動画キーフレーム高速抽出・滑らかな意味検索 | GPU マシン: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d` (`bfloat16`) / Mac: ホスト側で **MPS** 起動 |
+| **チーム / 大規模** | 8 コア以上 · RTX 3080/4080 以上 · 32 GB+ RAM | 200 GB+ NVMe | 10 万フレーム超・複数プラグイン運用 | `encoder` を専用 GPU サーバーへ分離し、`PICA_MILVUS_BACKEND=rest` で独立 Milvus v2 へ接続 |
+
+### なぜ標準モデルに `google/embeddinggemma-2` を採用したのか？
+
+1. **モジュラー設計による省メモリ化（実効約 440M パラメータ）**：
+   全体では 740M パラメータ（テキスト 270M + 画像 170M + 音声 300M）ですが、CineVec は画像・動画フレーム・字幕のみを扱うため `EMBED_DISABLE_AUDIO=true`（`audio_config=None`）で音声タワーを無効化しています。約 300M 分のメモリを削減でき、家庭用 GPU や Mac、CPU 環境でも軽快に動作します。
+2. **100 以上の言語を 1 つの 768 次元空間へ統合**：
+   日本語・英語・中国語・韓国語・スペイン語が混在していても、単一の 768 次元ベクトル空間でシームレスに横断検索できます。
+3. **センタークロップなしの全画面入力（Full-Frame Passthrough）**：
+   従来の CLIP ラッパーのように横長映像の中央だけを正方形に切り抜いて字幕や端の人物を欠落させることなく、フレーム全体をエンコードします。
+4. **8K コンテキスト長 ＆ 二重プレフィックス防止**：
+   長い字幕もそのまま処理し、検索クエリとドキュメントのタスク接頭辞を厳密に 1 回だけ付与します。
+5. **Apache 2.0 ライセンス ＆ `float16` オーバーフロー保護**：
+   `float16` で活性化が飽和する問題を避けるため、エンコーダサービスは **`bfloat16`** または **`float32`** のみを許可します。
 
 ---
 
@@ -82,71 +108,79 @@ CineVec 本体は「検索コア」に専念し、外部連携はすべて `/api
 
 > **リポジトリ**: [https://github.com/Chillwinner/CineGram](https://github.com/Chillwinner/CineGram)
 
-- **MTProto ユーザーアカウント＆Bot は両方オプション**：Web のみ / Bot のみ / MTProto のみ / デュアルモードを自由に選択可能。
-- **選択的インポート**：グループ別のフィルタ規則（種類・サイズ・長さ・キーワード・遡及日数）に加え、**Web 画面でサムネイルを見てチェックしたメッセージだけ取り込み**が可能。
-- **アルバム本文＆`#タグ` 自動継承**：Telegram アルバムの 2 枚目以降にキャプションが付かない仕様を補完し、全ファイルへ自動引き継ぎ。
-- **リンク生存監視**：グループ名変更・非公開化・削除を定期巡回し、`source_url` の自動更新や `source_invalid` 反映を実行。
+- **MTProto ＆ Bot は両方オプション**：Web のみ / Bot のみ / MTProto のみ / デュアルモードを自由に選択可能。
+- **選択的インポート**：グループ別フィルタ規則に加え、**Web 画面でサムネイルを見ながらチェックしたメッセージだけ取り込み**可能。
+- **アルバム本文＆`#タグ` 自動継承**：Telegram アルバムの 2 枚目以降にもキャプションと `#タグ` を自動コピー。
+- **リンク生存監視**：グループ名変更・非公開化・削除を定期巡回し、`source_url` 更新や `source_invalid` 反映を自動化。
 
 ---
 
-## ベクトル DB・モデル・ストレージの差し替え
+## 完全疎結合：モデル・ベクトル DB・ストレージを自由に組み合わせ
 
-CineVec は **ヘキサゴナルアーキテクチャ（Ports & Adapters）** を採用しており、ビジネスロジックは [`backend/app/domain/ports.py`](backend/app/domain/ports.py) の `Protocol` インターフェースのみに依存します。
+CineVec は **コンテナ層** と **コード層** の二段階で疎結合化されています。
 
-### 1. コード変更なしで切り替え可能（`.env` のみ）
-- **ベクトル DB**：内蔵 **Milvus Lite**（`PICA_MILVUS_BACKEND=lite`）↔ **Milvus REST v2**（`PICA_MILVUS_URI=http://...`）
-- **エンコーダ**：**EmbeddingGemma 2**（HTTP）↔ **Chinese-CLIP**（HTTP / ローカル ONNX）
-- **ストレージ**：MinIO / AWS S3 / Cloudflare R2 など S3 互換ストレージ全般
+### 1. サービス（コンテナ）層のレゴブロック構成
 
-### 2. Qdrant や pgvector など独自バックエンドを使いたい場合
-**はい、対応する `Protocol` インターフェースを実装してファクトリ関数に登録するだけです（業務ロジックや UI は無改修）：**
+`web`、`backend`（+ Milvus Lite）、`encoder`、`minio` はすべて HTTP / REST / S3 経由で独立して動作します。`backend` は意図的に `depends_on: encoder` を設定していないため、`encoder` コンテナを外して別マシンのモデルを繋いでも問題なく起動します。
+
+### 2. コード層のヘキサゴナル設計（Ports & Adapters）
+
+ビジネスロジックは [`backend/app/domain/ports.py`](backend/app/domain/ports.py) の `Protocol` のみに依存しています：
+- **コード変更なしで切り替え（`.env` のみ）**：Milvus Lite ↔ Milvus REST v2、EmbeddingGemma 2 ↔ Chinese-CLIP、MinIO ↔ AWS S3 / Cloudflare R2 / OSS。
+- **Qdrant・pgvector・独自モデルを繋ぎたい場合**：対応する `Protocol` を実装して [`backend/app/main.py`](backend/app/main.py) のファクトリ関数に登録するだけです（パイプラインや 3D UI の改修不要）。
 
 | 差し替え対象 | インターフェース (`backend/app/domain/ports.py`) | 参考実装 (`backend/app/infra/`) | 登録先 (`backend/app/main.py`) |
 | :--- | :--- | :--- | :--- |
 | **ベクトル DB** | `VectorIndex` | `milvus_lite.py` / `milvus_rest.py` | `build_vector_index()` |
-| **画像・テキストモデル** | `ImageTextEncoder` | `embeddinggemma_http.py` / `clip_http.py` | `build_encoders()` |
-| **字幕モデル** | `SubtitleEncoder` | `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
+| **画像・テキストモデル** | `ImageTextEncoder` | `embeddinggemma_http.py` / `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
+| **字幕モデル** | `SubtitleEncoder` | `embeddinggemma_http.py` / `clip_http.py` / `chinese_clip.py` | `build_encoders()` |
 | **ファイル保存** | `FileStore` | `file_store.py` | `build_file_store()` |
 | **読み取り専用ソース** | `SourceReader` | `s3_reader.py` | `build_container()` |
 
-```python
-class MyCustomVectorIndex:
-    def available(self) -> bool: ...
-    def status_message(self) -> str: ...
-    def upsert_records(self, modality: str, records: list[dict]) -> int: ...
-    def search(self, modality: str, vector: list[float], *, limit: int, offset: int = 0, filter_expr: str | None = None) -> list[dict]: ...
-    def delete_vectors(self, refs: list) -> VectorDeleteResult: ...
-    def delete_by_asset(self, asset_id: str, collections: list[str] | None = None) -> VectorDeleteResult: ...
-```
-
 ---
 
-## クイックスタート（デプロイ手順）
+## クイックスタートと `docker-compose.yml` カスタマイズ
 
-### 方法 A：Docker Compose ワンクリック起動（推奨・約 2 分）
+### オールインワン起動（EmbeddingGemma 2 内蔵）
 
-**MinIO**（バケット自動作成＆自動登録）、内蔵 **Milvus Lite**、**FFmpeg**、本番ビルド済み **3D Web UI** がすべて含まれます：
+**MinIO**、内蔵 **Milvus Lite**、**EmbeddingGemma 2** コンテナ、**FFmpeg**、本番 **3D Web UI** をまとめて起動します：
 
 ```bash
 git clone https://github.com/Chillwinner/Cinevec.git
 cd Cinevec
 cp .env.docker.example .env
-# .env を開き PICA_CLIP_HTTP_BASE_URL にエンコーダサービスの URL を設定
+# 必要なら .env に HF_TOKEN（または HF_ENDPOINT）を設定
+
+# CPU / デフォルト起動:
 docker compose up -d
+
+# NVIDIA GPU を使う場合 (bfloat16):
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-ブラウザで **http://localhost:5174** を開くと、初回ガイドが設定確認と UI 操作をステップごとに案内します。
+ブラウザで **http://localhost:5174** を開くと、初回ガイドが状態チェックと操作手順を案内します。
 
-### 方法 B：ローカル手動起動
+---
 
-```bash
-cp .env.example backend/.env
+### 独自コンポーネントを組み込む場合の `docker-compose.yml` 編集方法
 
-# バックエンド起動 (8008)
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt && pip install "pymilvus[milvus_lite]>=2.4.9"
-uvicorn app.main:app --host 127.0.0.1 --port 8008
+#### ケース 1：外部モデル / Mac (Apple Silicon MPS) / 別マシンの GPU を使う
+macOS の Docker は Metal GPU を使えないため、Mac ではエンコーダだけホスト側で動かすのが高速です：
+1. [`docker-compose.yml`](docker-compose.yml) から `encoder:` ブロックをコメントアウト（または `docker compose up -d minio minio-init backend web` を実行）。
+2. ホスト側でエンコーダを起動：
+   ```bash
+   python3 -m venv .venv-encoder && source .venv-encoder/bin/activate
+   pip install "torch>=2.4.0" -r encoder/requirements.txt
+   EMBED_DEVICE=mps HF_TOKEN=your_token uvicorn server:app --app-dir encoder --host 0.0.0.0 --port 8001
+   ```
+3. `.env` を編集：`PICA_CLIP_HTTP_BASE_URL=http://host.docker.internal:8001`（別サーバーならその IP）。Chinese-CLIP 512d を使う場合は `PICA_MODEL_FAMILY=chinese_clip` と `PICA_MODEL_DIM=512` に変更します。
 
-# 別ターミナルでフロントエンド起動 (5174)
-cd web && npm install && npm run dev
+#### ケース 2：独立した Milvus REST v2 クラスタへ切り替え
+`docker-compose.yml` の変更は不要です。`.env` に以下を設定します：
+```env
+PICA_MILVUS_BACKEND=rest
+PICA_MILVUS_URI=http://your-milvus:19530
 ```
+
+#### ケース 3：既存の S3 / Cloudflare R2 / Aliyun OSS / 既存 MinIO を使う
+[`docker-compose.yml`](docker-compose.yml) の `minio:`・`minio-init:` と `backend.depends_on` をコメントアウトし、`.env` の `PICA_S3_*` に接続先を設定してください。

@@ -38,9 +38,9 @@ const TOUR_STEPS: TourStep[] = [
     titleEn: "Welcome to CineVec · Quick Setup Guide",
     titleZh: "欢迎使用 CineVec · 新手配置与操作指南",
     bodyEn:
-      "Before searching your media, check the 3 core services below. Docker Compose automatically starts MinIO and embedded Milvus Lite — you only need to point PICA_CLIP_HTTP_BASE_URL to your embedding model.",
+      "Before searching your media, check the 3 core services below. Docker Compose automatically starts MinIO, embedded Milvus Lite, and the EmbeddingGemma 2 encoder container (first boot downloads weights into hf_cache) — or point PICA_CLIP_HTTP_BASE_URL anytime to an external GPU or custom model.",
     bodyZh:
-      "开始检索素材前，先确认下方 3 项核心服务状态。使用 docker compose 一键部署时，MinIO 存储桶与内置 Milvus Lite 向量库会自动就绪，只需在 .env 中填入你的编码模型服务地址即可。",
+      "开始检索素材前，先确认下方 3 项核心服务状态。Docker Compose 已内置自动拉起 MinIO、Milvus Lite 单文件向量库与 EmbeddingGemma 2 编码容器（首次启动会自动下载权重到 hf_cache），也可随时修改 PICA_CLIP_HTTP_BASE_URL 接入外部显卡或自研模型。",
   },
   {
     id: "search-modes",
@@ -345,7 +345,7 @@ export default function OnboardingTour({ open, status, onClose }: Props) {
                 </div>
                 <pre className="tour-env-code">{`PICA_MILVUS_BACKEND=lite                 # 内置 Milvus Lite，免装集群
 PICA_AUTO_INIT_PLATFORM_STORAGE=true     # 自动连接内置 MinIO 桶
-PICA_CLIP_HTTP_BASE_URL=http://host.docker.internal:8001  # 填入你的模型服务地址`}</pre>
+PICA_CLIP_HTTP_BASE_URL=http://encoder:8001  # 默认内置 EmbeddingGemma 2（也可改外部 GPU 地址）`}</pre>
               </div>
 
               <div className="tour-modal-footer">
