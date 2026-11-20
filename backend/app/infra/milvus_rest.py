@@ -86,6 +86,7 @@ class MilvusRestIndex:
         self._auto_create = auto_create
         self._probed = False
         self._probe_error: str | None = None
+        self._verified_collections: set[str] = set()
 
     def available(self) -> bool:
         return bool(self._uri) and self._dim is not None and int(self._dim) > 0
@@ -182,9 +183,12 @@ class MilvusRestIndex:
         if not self._dim:
             raise NotConfiguredError("未配置向量维度，拒绝创建集合。")
         name = self.name_for(modality)
+        if name in self._verified_collections:
+            return name
         existing = self._describe(name)
         if existing is not None:
             self._assert_compatible(existing, name)
+            self._verified_collections.add(name)
             return name
         if not self._auto_create:
             raise NotConfiguredError(
@@ -217,6 +221,7 @@ class MilvusRestIndex:
         except DependencyError:
             # load 失败不删除刚创建的集合，交由下次按需重试
             raise
+        self._verified_collections.add(name)
         return name
 
     def _describe(self, name: str) -> dict[str, Any] | None:
@@ -305,7 +310,17 @@ class MilvusRestIndex:
         }
         if filter_expr:
             payload["filter"] = filter_expr
-        data = self._post(SEARCH_PATH, payload)
+        try:
+            data = self._post(SEARCH_PATH, payload)
+        except DependencyError as exc:
+            msg = str(exc).lower()
+            if "not found" in msg or "not exist" in msg:
+                self._verified_collections.discard(name)
+                name = self.ensure_collection(modality)
+                payload["collectionName"] = name
+                data = self._post(SEARCH_PATH, payload)
+            else:
+                raise
         rows = data.get("data") or []
         # 官方响应可能是 [{id, distance/score, entity: {...}}] 或嵌套 list
         if rows and isinstance(rows[0], list):

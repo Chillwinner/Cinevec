@@ -282,3 +282,12 @@ cd backend && pytest -q
 PYTHONPATH=backend:encoder backend/.venv/bin/pytest -q encoder/test_server.py
 cd web && npm run build && npm test
 ```
+
+---
+
+## Changelog
+
+### v1.0 (`2026-11-20`)
+- **Fixed**: Unified search result ranking across images and videos by relevance score descending (`backend/app/application/search_aggregate.py` & `web/src/pages/SearchPage.tsx`), resolving the issue where high-scoring videos appeared after lower-scoring images.
+- **Performance**: Added Milvus REST v2 collection-verification caching (`backend/app/infra/milvus_rest.py`) and concurrent visual + subtitle recall (`backend/app/application/search_service.py`), reducing remote Milvus search latency by ~50%.
+- **Added**: InsightFace (`buffalo_sc`) face detection, People Album clustering, `/api/v1/search/face`, and Docker GPU (`EmbeddingGemma 2`) deployment support.

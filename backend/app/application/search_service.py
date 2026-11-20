@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any
 
@@ -103,14 +104,16 @@ class SearchService:
             else:
                 encode_task = getattr(self._encoder, "encode_text_for_task", None)
                 qvec = encode_task(text, role="query") if callable(encode_task) else self._encoder.encode_text(text)
-                visual_hits = self._recall("frame", qvec, settings, assets)
                 sub_enc = self._subtitle_encoder
                 if sub_enc is not None and sub_enc.available():
-                    svec = sub_enc.encode_text(text)
-                    subtitle_hits = self._recall("subtitle", svec, settings, assets)
-                elif not (sub_enc and sub_enc.available()):
-                    # 字幕路未接通时仍可用画面路；不伪造字幕分
-                    pass
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        f_visual = pool.submit(self._recall, "frame", qvec, settings, assets)
+                        svec = sub_enc.encode_text(text)
+                        f_sub = pool.submit(self._recall, "subtitle", svec, settings, assets)
+                        visual_hits = f_visual.result()
+                        subtitle_hits = f_sub.result()
+                else:
+                    visual_hits = self._recall("frame", qvec, settings, assets)
 
             excerpts = self._excerpts(subtitle_hits)
             for asset in assets.values():

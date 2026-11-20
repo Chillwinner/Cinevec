@@ -328,9 +328,6 @@ export default function SearchPage() {
     );
   }, [result, hitFilter]);
 
-  const images = useMemo(() => visibleHits.filter((item) => item.kind === "image"), [visibleHits]);
-  const videos = useMemo(() => visibleHits.filter((item) => item.kind === "video"), [visibleHits]);
-
   // 将当前视图数据（语义检索结果 / 词法匹配 / 馆藏展映）统一映射为 3D 轮播与放映室靶点
   const { slides, screeningMap } = useMemo(() => {
     const nextSlides: CinemaSlideItem[] = [];
@@ -629,35 +626,27 @@ export default function SearchPage() {
                 </Empty>
               ) : (
                 <>
-                  {hitFilter !== "video" && images.length > 0 ? (
+                  {visibleHits.length > 0 ? (
                     <div className="result-block">
                       <div className="result-block-head">
-                        <span className="eyebrow">{t("Image Frames", "图片帧")}</span>
-                        <span className="result-count">{images.length}</span>
+                        <span className="eyebrow">
+                          {hitFilter === "image"
+                            ? t("Image Frames", "图片帧")
+                            : hitFilter === "video"
+                              ? t("Video Reels", "视频卷")
+                              : t("Ranked Matches", "相关度排序")}
+                        </span>
+                        <span className="result-count">{visibleHits.length}</span>
                       </div>
                       <div className="hit-grid">
-                        {images.map((item, index) => (
+                        {visibleHits.map((item, index) => (
                           <SearchHitCard key={item.asset_id} item={item} index={index} onOpen={setScreening} />
                         ))}
                       </div>
                     </div>
-                  ) : null}
-
-                  {hitFilter !== "image" && videos.length > 0 ? (
-                    <div className="result-block">
-                      <div className="result-block-head">
-                        <span className="eyebrow">{t("Video Reels", "视频卷")}</span>
-                        <span className="result-count">{videos.length}</span>
-                      </div>
-                      <div className="hit-grid">
-                        {videos.map((item, index) => (
-                          <SearchHitCard key={item.asset_id} item={item} index={index} onOpen={setScreening} />
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {visibleHits.length === 0 ? <p className="hint">{t("No hits in this category.", "这一类里没有结果。")}</p> : null}
+                  ) : (
+                    <p className="hint">{t("No hits in this category.", "这一类里没有结果。")}</p>
+                  )}
                 </>
               )}
             </div>

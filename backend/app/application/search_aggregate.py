@@ -113,6 +113,7 @@ def aggregate_hits(
 
     images: list[AssetResult] = []
     videos: list[AssetResult] = []
+    combined: list[AssetResult] = []
     for score, aid, source in scored:
         asset = assets_by_id[aid]
         kind = getattr(asset, "kind", "other")
@@ -164,28 +165,28 @@ def aggregate_hits(
             "subtitle": "subtitle_only",
             "mixed": "visual_and_subtitle",
         }.get(source, source)
-        bucket.append(
-            AssetResult(
-                asset_id=aid,
-                kind=kind,
-                object_key=getattr(asset, "object_key", ""),
-                lifecycle=getattr(asset, "lifecycle", "active"),
-                lifecycle_label=label,
-                visibility=vis,
-                score=score,
-                metric=settings.metric,
-                score_meaning=SCORE_MEANING,
-                hit_source=source,
-                hit_method=hit_method,
-                previews=previews,
-                subtitle_excerpt=excerpt,
-                subtitle_hits=sub_hits,
-                time_seconds=(previews[0]["time_seconds"] if previews else None),
-            )
+        item = AssetResult(
+            asset_id=aid,
+            kind=kind,
+            object_key=getattr(asset, "object_key", ""),
+            lifecycle=getattr(asset, "lifecycle", "active"),
+            lifecycle_label=label,
+            visibility=vis,
+            score=score,
+            metric=settings.metric,
+            score_meaning=SCORE_MEANING,
+            hit_source=source,
+            hit_method=hit_method,
+            previews=previews,
+            subtitle_excerpt=excerpt,
+            subtitle_hits=sub_hits,
+            time_seconds=(previews[0]["time_seconds"] if previews else None),
         )
+        bucket.append(item)
+        combined.append(item)
         if len(images) >= settings.top_n and len(videos) >= settings.top_n:
             break
-    return images + videos
+    return combined
 
 
 def _nearest_preview(asset, sub_hits: list[FrameHit], assets_by_id: dict) -> dict | None:

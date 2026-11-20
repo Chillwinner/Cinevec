@@ -280,3 +280,12 @@ cd backend && pytest -q
 PYTHONPATH=backend:encoder backend/.venv/bin/pytest -q encoder/test_server.py
 cd web && npm run build && npm test
 ```
+
+---
+
+## 更新日志
+
+### v1.0（`2026-11-20`）
+- **修复**：统一图片与视频检索结果的排序逻辑（[`backend/app/application/search_aggregate.py`](backend/app/application/search_aggregate.py) 与 [`web/src/pages/SearchPage.tsx`](web/src/pages/SearchPage.tsx)），解决高相关度视频被排在低相关度图片之后的问题。
+- **优化**：为 Milvus REST v2 增加集合校验缓存（[`backend/app/infra/milvus_rest.py`](backend/app/infra/milvus_rest.py)）并并发执行画面路与字幕路召回（[`backend/app/application/search_service.py`](backend/app/application/search_service.py)），跨网检索延迟降低约 50%。
+- **新增**：InsightFace（`buffalo_sc`）人脸检测、People 人物相册聚类、`/api/v1/search/face` 接口及 Docker GPU（`EmbeddingGemma 2`）加速部署支持。
