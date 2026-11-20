@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 from app.application.search_aggregate import LIFECYCLE_LABELS, preview_locator
@@ -111,6 +112,64 @@ class FaceService:
                 out.append((p, vec))
         return out
 
+    def _load_frame_bytes(self, asset: Any, frame: dict[str, Any]) -> bytes | None:
+        """Prefer full-resolution source image bytes for static photos before falling back to previews."""
+        extra = frame.get("extra") if isinstance(frame.get("extra"), dict) else {}
+        if getattr(asset, "kind", None) == "image":
+            for local_key in ("local_full_path", "local_path"):
+                lp = extra.get(local_key)
+                if lp:
+                    p = Path(str(lp))
+                    if p.is_file():
+                        try:
+                            data = p.read_bytes()
+                            if data:
+                                return data
+                        except OSError:
+                            pass
+            obj_key = getattr(asset, "object_key", None)
+            if (
+                obj_key
+                and self._store is not None
+                and self._store.available()
+                and (
+                    getattr(asset, "origin", "") == "hosted"
+                    or extra.get("full_frame_source") == "original_object_bytes"
+                )
+            ):
+                try:
+                    data = self._store.get_bytes(obj_key)
+                    if data:
+                        return data
+                except Exception:
+                    pass
+        else:
+            lp = extra.get("local_path")
+            if lp:
+                p = Path(str(lp))
+                if p.is_file():
+                    try:
+                        data = p.read_bytes()
+                        if data:
+                            return data
+                    except OSError:
+                        pass
+
+        if self._store is not None and self._store.available():
+            candidate_keys = [frame.get("preview_key"), frame.get("model_input_key")]
+            if getattr(asset, "kind", None) == "image":
+                candidate_keys.append(getattr(asset, "cover_key", None))
+            for key in candidate_keys:
+                if not key:
+                    continue
+                try:
+                    data = self._store.get_bytes(str(key))
+                    if data:
+                        return data
+                except Exception:
+                    continue
+        return None
+
     def index_asset_faces(
         self,
         asset_id: str,
@@ -132,13 +191,7 @@ class FaceService:
             for frame in kept_frames:
                 idx = int(frame.get("index") if frame.get("index") is not None else frame.get("frame_index") or 0)
                 ts = float(frame.get("time_seconds") or 0.0)
-                key = frame.get("preview_key") or frame.get("model_input_key")
-                if not key or self._store is None or not self._store.available():
-                    continue
-                try:
-                    raw = self._store.get_bytes(key)
-                except Exception:
-                    continue
+                raw = self._load_frame_bytes(asset, frame)
                 if raw:
                     frames_to_scan.append((idx, ts, raw))
 
@@ -520,11 +573,13 @@ class FaceService:
                 return self._store.get_bytes(crop_key), "image/jpeg"
             except Exception:
                 pass
-        # Fallback: extract on-demand from stored frame preview
+        # Fallback: extract on-demand from full source / stored frame preview
         frame = self._metadata.get_frame(face["asset_id"], int(face.get("frame_index") or 0))
-        if frame and frame.get("preview_key") and self._store is not None and self._store.available():
-            raw = self._store.get_bytes(frame["preview_key"])
-            return crop_face_jpeg(raw, face.get("bbox") or [], size=160), "image/jpeg"
+        asset = self._metadata.get_asset(face["asset_id"])
+        if frame and asset is not None:
+            raw = self._load_frame_bytes(asset, frame)
+            if raw:
+                return crop_face_jpeg(raw, face.get("bbox") or [], size=160), "image/jpeg"
         raise NotFoundError("人脸头像文件不可用")
 
     def recluster_faces(self, threshold: float | None = None) -> dict[str, Any]:

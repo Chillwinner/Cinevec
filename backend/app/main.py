@@ -137,6 +137,7 @@ def build_face_recognizer(settings: Settings, enabled_getter, override=None):
         cache_dir=_resolve_under_backend(settings.face_cache_dir),
         det_threshold=float(settings.face_det_threshold or 0.55),
         min_face_px=int(settings.face_min_size_px or 24),
+        flip_tta=bool(getattr(settings, "face_flip_tta", True)),
         enabled_getter=enabled_getter,
     )
 

@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     face_det_threshold: float = 0.55
     face_cluster_threshold: float = 0.40
     face_min_size_px: int = 24
+    face_flip_tta: bool = True
     face_cache_dir: Path = Field(default=Path("data/models/insightface"))
 
     def cors_origin_list(self) -> list[str]:

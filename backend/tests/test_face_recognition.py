@@ -401,3 +401,145 @@ def test_pure_onnx_recognizer_helpers_and_exif_crop(tmp_path: Path):
     cropped_img = Image.open(BytesIO(cropped_bytes)).convert("RGB")
     px = cropped_img.getpixel((32, 32))
     assert px[0] > 180 and px[1] < 90
+
+
+def test_flip_tta_averages_mirrored_embeddings(tmp_path: Path):
+    import numpy as np
+    from app.domain.face import l2_normalize
+    from app.infra.face_insightface import InsightFaceLocalRecognizer
+
+    class _FakeInput:
+        name = "input.1"
+
+    class _FakeRecSession:
+        def __init__(self) -> None:
+            self.blobs: list[np.ndarray] = []
+
+        def get_inputs(self):
+            return [_FakeInput()]
+
+        def run(self, _out, feed: dict):
+            blob = feed["input.1"]
+            self.blobs.append(blob.copy())
+            # Distinguish left-heavy vs right-heavy R channel so flip changes the output vector
+            left_mean = float(blob[0, 0, :, :56].mean())
+            right_mean = float(blob[0, 0, :, 56:].mean())
+            vec = np.zeros((1, FACE_DIM), dtype=np.float32)
+            vec[0, 0] = max(0.0, left_mean + 2.0)
+            vec[0, 1] = max(0.0, right_mean + 2.0)
+            return [vec]
+
+    chip = Image.new("RGB", (112, 112), (0, 0, 0))
+    ImageDraw.Draw(chip).rectangle((0, 0, 40, 112), fill=(255, 0, 0))
+
+    sess_no_tta = _FakeRecSession()
+    rec_no_tta = InsightFaceLocalRecognizer(model_name="buffalo_sc", cache_dir=tmp_path, flip_tta=False)
+    v_single = rec_no_tta._encode_arcface(sess_no_tta, chip)
+    assert len(sess_no_tta.blobs) == 1
+    assert v_single[0] > v_single[1]
+
+    sess_tta = _FakeRecSession()
+    rec_tta = InsightFaceLocalRecognizer(model_name="buffalo_sc", cache_dir=tmp_path, flip_tta=True)
+    v_tta = rec_tta._encode_arcface(sess_tta, chip)
+    assert len(sess_tta.blobs) == 2
+    # Second pass must be horizontally mirrored
+    np.testing.assert_allclose(sess_tta.blobs[1][0], sess_tta.blobs[0][0, :, :, ::-1], atol=1e-5)
+    # Asymmetric left bar + flipped right bar average cleanly to symmetric unit vector [1/sqrt(2), 1/sqrt(2), ...]
+    expected = l2_normalize([1.0, 1.0] + [0.0] * (FACE_DIM - 2))
+    assert abs(v_tta[0] - expected[0]) < 1e-3
+    assert abs(v_tta[1] - expected[1]) < 1e-3
+
+
+def test_static_image_face_index_prefers_original_object_bytes(tmp_path: Path):
+    db_path = tmp_path / "hires.sqlite"
+    store = LocalFileStore(tmp_path / "store", label="pytest")
+    recorded_bytes: list[bytes] = []
+
+    class _RecordingRecognizer(FakeFaceRecognizer):
+        def detect_and_encode(self, image_bytes: bytes) -> list[DetectedFace]:
+            recorded_bytes.append(image_bytes)
+            return super().detect_and_encode(image_bytes)
+
+    settings = Settings(sqlite_path=db_path, worker_enabled=False, face_enabled=True)
+    app = create_app(
+        settings,
+        sqlite_path=db_path,
+        source_reader=FakeReader("ok"),
+        worker_enabled=False,
+        file_store=store,
+        work_root=tmp_path / "work",
+        encoder=MemoryEncoder(),
+        subtitle_encoder=MemoryEncoder(),
+        index=MemoryVectorIndex(),
+        face_recognizer=_RecordingRecognizer(lambda: True),
+        face_index=MemoryVectorIndex(model_id="face_fake", dim=FACE_DIM),
+    )
+
+    hires_png = _make_portrait_png(has_a=True, has_b=False)
+    lowres_preview_png = _make_portrait_png(has_a=False, has_b=True)
+    assert hires_png != lowres_preview_png
+
+    with TestClient(app):
+        container = app.state.container
+        container.app_settings.update_face({"enabled": True})
+        meta = container.faces._metadata
+        now = datetime.now(timezone.utc)
+        meta.add_source(
+            Source(
+                id="src-1",
+                name="hosted",
+                endpoint="local",
+                bucket="b",
+                region="us-east-1",
+                role="both",
+                is_platform_storage=True,
+                access_key_configured=True,
+                secret_configured=True,
+                last_probe_status="ok",
+                last_probe_message="ok",
+                created_at=now,
+                updated_at=now,
+            ),
+            access_key="k",
+            secret_key="s",
+        )
+        asset = Asset(
+            id="img-hires",
+            source_id="src-1",
+            object_key="originals/img-hires/full.png",
+            kind="image",
+            vectorize=True,
+            status="indexed",
+            lifecycle="active",
+            index_state="ready",
+            version=1,
+            ready_version=1,
+            origin="hosted",
+            display_name="full.png",
+            created_at=now,
+            updated_at=now,
+        )
+        meta.upsert_asset(asset)
+        store.put_bytes(asset.object_key, hires_png, "image/png")
+        store.put_bytes("previews/img-hires/frame_0.png", lowres_preview_png, "image/png")
+        meta.upsert_frame(
+            "img-hires",
+            "job-1",
+            SimpleNamespace(
+                index=0,
+                time_seconds=0.0,
+                kept=True,
+                drop_reason=None,
+                preview_key="previews/img-hires/frame_0.png",
+                model_input_key="previews/img-hires/frame_0.png",
+                extra={},
+            ),
+        )
+
+        container.faces.index_asset_faces("img-hires")
+        assert recorded_bytes[-1] == hires_png
+
+        # When full original object is unavailable, gracefully fall back to preview_key
+        store.delete_objects([asset.object_key])
+        container.faces.index_asset_faces("img-hires")
+        assert recorded_bytes[-1] == lowres_preview_png

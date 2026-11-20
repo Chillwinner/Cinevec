@@ -138,12 +138,14 @@ class InsightFaceLocalRecognizer:
         cache_dir: str | Path = "data/models/insightface",
         det_threshold: float = 0.55,
         min_face_px: int = 24,
+        flip_tta: bool = True,
         enabled_getter: Callable[[], bool] | None = None,
     ) -> None:
         self.model_name = (model_name or "buffalo_sc").strip() or "buffalo_sc"
         self.cache_dir = Path(cache_dir)
         self.det_threshold = float(det_threshold)
         self.min_face_px = int(min_face_px)
+        self.flip_tta = bool(flip_tta)
         self._enabled_getter = enabled_getter
         self._lock = threading.Lock()
         self._det_session: Any = None
@@ -185,6 +187,7 @@ class InsightFaceLocalRecognizer:
             "backend": "local_insightface",
             "model": self.model_name,
             "dim": FACE_DIM,
+            "flip_tta": self.flip_tta,
             "deps_installed": deps,
             "loaded": self._det_session is not None and self._rec_session is not None,
             "message": self.status_message(),
@@ -340,7 +343,7 @@ class InsightFaceLocalRecognizer:
         keep = _nms_xyxy(boxes, scores, thresh=0.4)
         return [(boxes[i], float(scores[i]), kps[i]) for i in keep]
 
-    def _encode_arcface(self, rec_session: Any, chip_rgb: Image.Image) -> list[float]:
+    def _encode_chip(self, rec_session: Any, chip_rgb: Image.Image) -> list[float]:
         import numpy as np
 
         arr = np.asarray(chip_rgb, dtype=np.float32)
@@ -348,6 +351,15 @@ class InsightFaceLocalRecognizer:
         input_name = rec_session.get_inputs()[0].name
         emb = rec_session.run(None, {input_name: blob})[0][0]
         return l2_normalize([float(v) for v in emb])
+
+    def _encode_arcface(self, rec_session: Any, chip_rgb: Image.Image) -> list[float]:
+        emb = self._encode_chip(rec_session, chip_rgb)
+        if not self.flip_tta:
+            return emb
+        emb_flip = self._encode_chip(rec_session, ImageOps.mirror(chip_rgb))
+        if len(emb_flip) != len(emb):
+            return emb
+        return l2_normalize([a + b for a, b in zip(emb, emb_flip)])
 
     def detect_and_encode(self, image_bytes: bytes) -> list[DetectedFace]:
         if not image_bytes:
