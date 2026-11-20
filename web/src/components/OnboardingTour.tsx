@@ -50,9 +50,9 @@ const TOUR_STEPS: TourStep[] = [
     titleEn: "1. Switch Search Modality",
     titleZh: "1. 切换三种检索模式",
     bodyEn:
-      "Semantic searches scenes & actions in natural language; Image finds visually similar shots by uploading a reference frame; Lexical matches filenames, tags, and descriptions.",
+      "Vector Match combines natural-language scene search and image-to-image search (attach or drop a photo); Face Recognition finds people across shots; Lexical matches filenames, tags, and descriptions.",
     bodyZh:
-      "「语义」用自然语言找画面和动作；「以图」上传样图找相似镜头；「词法」按文件名、人工标签和描述文案模糊匹配。",
+      "「向量匹配」同时支持文字搜画面与以图搜图（点击附件或拖入图片即可）；「人脸识别」按人像找同一个人；「词法」按文件名、人工标签和描述文案模糊匹配。",
   },
   {
     id: "search-input",
@@ -62,9 +62,9 @@ const TOUR_STEPS: TourStep[] = [
     titleEn: "2. Director Search Dock",
     titleZh: "2. 导演搜索栏（支持拖图）",
     bodyEn:
-      "Type any scene description (e.g. 'sunset by the sea') and press Enter, or drag & drop any reference image directly onto the stage to trigger image search.",
+      "Type a scene description (e.g. 'sunset by the sea') and press Enter, or drag & drop any photo onto the stage to run Vector Match or Face Recognition.",
     bodyZh:
-      "直接输入画面描述（例如「海边的黄昏」「跑步」）按回车即可检索；也可以把本地图片直接拖拽到页面任意位置触发以图搜图。",
+      "直接输入画面描述（例如「海边的黄昏」「跑步」）按回车即可检索；也可以把本地图片直接拖拽到页面任意位置触发向量匹配或人脸识别。",
   },
   {
     id: "import-btn",

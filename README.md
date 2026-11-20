@@ -208,6 +208,9 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 Open **http://localhost:5174** (the built-in onboarding modal checks every block and walks you through the UI; the `encoder` downloads weights to `hf_cache` once on first boot).
 
+> - **Optional Face Recognition**: set `PICA_FACE_INSTALL=true` and `PICA_FACE_ENABLED=true` in `.env` before `docker compose up -d --build`.
+> - **Optional Telegram Plugin ([CineGram](https://github.com/Chillwinner/CineGram))**: `git clone https://github.com/Chillwinner/CineGram.git && cd CineGram && docker compose up -d --build`, then open **http://localhost:8018** and follow its built-in onboarding guide.
+
 > Tip: For a smaller CPU-only `encoder` image, set `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu` in `.env` before building.
 
 ---

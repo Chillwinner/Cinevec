@@ -844,4 +844,6 @@ export const I18N_DICT: Record<string, Record<ExtraLang, string>> = {
   "Backfill Existing Media": { ja: "既存メディアの顔を検出", ko: "기존 미디어 얼굴 일괄 스캔", es: "Escanear medios existentes" },
   "Recluster Unnamed Faces": { ja: "未命名の顔を再クラスタリング", ko: "미지정 얼굴 재클러스터링", es: "Reagrupar rostros sin nombre" },
   "Face recognition settings saved.": { ja: "顔認識設定を保存しました。", ko: "얼굴 인식 설정을 저장했습니다.", es: "Ajustes faciales guardados." },
+  "Optional: add text to refine...": { ja: "任意: テキストで絞り込み...", ko: "선택: 텍스트 설명 추가...", es: "Opcional: añade texto para refinar..." },
+  "Attach reference image": { ja: "参考画像を添付", ko: "참고 이미지 첨부", es: "Adjuntar imagen de referencia" },
 };

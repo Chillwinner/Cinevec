@@ -770,6 +770,23 @@ body {
   pointer-events: none;
 }
 
+.dock-text-slot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.dock-text-slot .ghost-placeholder {
+  left: 0;
+}
+
+.dock-attach-btn {
+  cursor: pointer;
+}
+
 .dock-file-label {
   flex: 1;
   min-width: 0;

@@ -206,6 +206,9 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 
 浏览器打开 **http://localhost:5174**，首次打开会弹出新手向导检查服务状态并介绍每个按钮的作用（首次启动 `encoder` 会在后台自动拉取模型权重到 `hf_cache` 卷）。
 
+> - **可选开启人脸识别**：构建前在 `.env` 中设置 `PICA_FACE_INSTALL=true` 与 `PICA_FACE_ENABLED=true`，再执行 `docker compose up -d --build`。
+> - **可选接入 Telegram 插件（[CineGram](https://github.com/Chillwinner/CineGram)）**：`git clone https://github.com/Chillwinner/CineGram.git && cd CineGram && docker compose up -d --build`，打开 **http://localhost:8018** 按页面内置新手引导 1 分钟即可连上本体。
+
 > 小技巧：如果你只用纯 CPU 跑且想缩小镜像体积，构建前在 `.env` 里取消注释 `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu` 即可。
 
 ---

@@ -36,7 +36,7 @@ import { AnimatedNumber, Banner, Empty, Segmented } from "../components/ui";
 import { EASE, spring } from "../motion";
 import type { Asset, DetectedFaceChoice, LexicalHit, SearchHit, SearchResponse, SystemStatus } from "../types";
 
-type Mode = "text" | "image" | "face" | "lexical";
+type Mode = "semantic" | "face" | "lexical";
 type HitFilter = "all" | "image" | "video" | "subtitle";
 type ViewMode = "cinema" | "grid";
 
@@ -137,7 +137,7 @@ export default function SearchPage() {
   const carouselRef = useRef<CinemaCarouselHandle | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>("cinema");
-  const [mode, setMode] = useState<Mode>("text");
+  const [mode, setMode] = useState<Mode>("semantic");
   const [query, setQuery] = useState("");
   const [topN, setTopN] = useState(20);
   const [threshold, setThreshold] = useState<string>("0");
@@ -244,11 +244,12 @@ export default function SearchPage() {
     setTuneOpen(false);
     resetResults();
     try {
-      if (mode === "text") {
-        setResult(await api.search(query, extra));
-      } else if (mode === "image") {
-        if (!imageFile) return;
-        setResult(await api.searchImage(imageFile, extra));
+      if (mode === "semantic") {
+        if (imageFile) {
+          setResult(await api.searchImage(imageFile, { ...extra, query: query.trim() || undefined }));
+        } else {
+          setResult(await api.search(query, extra));
+        }
       } else if (mode === "face") {
         if (!imageFile) return;
         const data = await api.searchFace(imageFile, { ...extra, face_index: selectedFaceIndex });
@@ -289,7 +290,7 @@ export default function SearchPage() {
   }
 
   async function searchSimilar(file: File) {
-    setMode("image");
+    setMode("semantic");
     setPickedImage(file);
     setScreening(null);
     setBusy(true);
@@ -309,7 +310,12 @@ export default function SearchPage() {
     event.currentTarget.style.setProperty("--spot-y", `${event.clientY - rect.top}px`);
   }
 
-  const canSubmit = mode === "image" || mode === "face" ? Boolean(imageFile) : Boolean(query.trim());
+  const canSubmit =
+    mode === "face"
+      ? Boolean(imageFile)
+      : mode === "semantic"
+        ? Boolean(imageFile || query.trim())
+        : Boolean(query.trim());
   const searched = Boolean(result || lexicalItems);
   const canVisual = Boolean(connected && (indexedTotal ?? 0) > 0);
 
@@ -459,7 +465,7 @@ export default function SearchPage() {
         setDragOver(false);
         if (!file) return;
         event.preventDefault();
-        if (mode !== "face") setMode("image");
+        if (mode !== "face") setMode("semantic");
         setPickedImage(file);
         resetResults();
       }}
@@ -770,26 +776,14 @@ export default function SearchPage() {
             <button
               type="button"
               role="tab"
-              aria-selected={mode === "text"}
-              className={mode === "text" ? "active" : ""}
+              aria-selected={mode === "semantic"}
+              className={mode === "semantic" ? "active" : ""}
               onClick={() => {
-                setMode("text");
+                setMode("semantic");
                 setError(null);
               }}
             >
-              {t("Semantic", "语义")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "image"}
-              className={mode === "image" ? "active" : ""}
-              onClick={() => {
-                setMode("image");
-                setError(null);
-              }}
-            >
-              {t("Image", "以图")}
+              {t("Semantic", "向量匹配")}
             </button>
             <button
               type="button"
@@ -801,7 +795,7 @@ export default function SearchPage() {
                 setError(null);
               }}
             >
-              {t("Face", "以脸搜人")}
+              {t("Face", "人脸识别")}
             </button>
             <button
               type="button"
@@ -819,22 +813,20 @@ export default function SearchPage() {
 
           <div className="dock-divider" />
 
-          {mode === "image" || mode === "face" ? (
+          {mode === "face" ? (
             <div className="dock-input-area" data-tour="search-input">
               {imagePreview ? (
                 <img className="dock-query-thumb" src={imagePreview} alt="" />
               ) : (
                 <span className="dock-query-icon">
-                  {mode === "face" ? <User size={17} /> : <ImageSquare size={17} />}
+                  <User size={17} />
                 </span>
               )}
               <label className="dock-file-label">
                 <span>
                   {imageFile
                     ? imageFile.name
-                    : mode === "face"
-                      ? t("Choose or drop a portrait to search by face...", "选择或拖入一张包含人脸的照片...")
-                      : t("Choose or drop a reference image...", "选择或拖入一张样图...")}
+                    : t("Choose or drop a portrait to search by face...", "选择或拖入一张包含人脸的照片...")}
                 </span>
                 <input type="file" accept="image/*" hidden disabled={busy} onChange={onPickImage} />
               </label>
@@ -849,6 +841,56 @@ export default function SearchPage() {
                 </button>
               ) : null}
             </div>
+          ) : mode === "semantic" ? (
+            <div className="dock-input-area" data-tour="search-input">
+              {imagePreview ? (
+                <img className="dock-query-thumb" src={imagePreview} alt="" />
+              ) : (
+                <span className="dock-query-icon">
+                  <MagnifyingGlass size={17} />
+                </span>
+              )}
+              <div className="dock-text-slot">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={imageFile ? t("Optional: add text to refine...", "可选：补充文字描述...") : undefined}
+                  aria-label={t("Visual scene description", "画面语义描述")}
+                />
+                {!query && !imageFile ? (
+                  <RotatingPlaceholder examples={SEARCH_EXAMPLES[lang].text} />
+                ) : null}
+              </div>
+              {query ? (
+                <button
+                  type="button"
+                  className="dock-icon-btn"
+                  onClick={() => setQuery("")}
+                  aria-label={t("Clear input", "清空输入")}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+              {imageFile ? (
+                <button
+                  type="button"
+                  className="dock-icon-btn"
+                  onClick={() => setPickedImage(null)}
+                  title={t("Clear image", "清除图片")}
+                  aria-label={t("Clear image", "清除图片")}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+              <label
+                className="dock-icon-btn dock-attach-btn"
+                title={t("Attach reference image", "上传样图搜相似")}
+                aria-label={t("Attach reference image", "上传样图搜相似")}
+              >
+                <ImageSquare size={16} />
+                <input type="file" accept="image/*" hidden disabled={busy} onChange={onPickImage} />
+              </label>
+            </div>
           ) : (
             <div className="dock-input-area" data-tour="search-input">
               <span className="dock-query-icon">
@@ -857,16 +899,10 @@ export default function SearchPage() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                aria-label={mode === "lexical" ? t("Filename or tags", "文件名或标签") : t("Visual scene description", "画面语义描述")}
+                aria-label={t("Filename or tags", "文件名或标签")}
               />
               {!query ? (
-                <RotatingPlaceholder
-                  examples={
-                    mode === "lexical"
-                      ? SEARCH_EXAMPLES[lang].lexical
-                      : SEARCH_EXAMPLES[lang].text
-                  }
-                />
+                <RotatingPlaceholder examples={SEARCH_EXAMPLES[lang].lexical} />
               ) : (
                 <button
                   type="button"
