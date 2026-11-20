@@ -112,6 +112,7 @@ export type SystemStatus = {
   milvus: DepStatus & { uri_configured?: boolean; token_configured?: boolean; inference_ready?: boolean };
   embedding_model: DepStatus & { inference_ready?: boolean; path_configured?: boolean };
   subtitle_encoder?: DepStatus & { inference_ready?: boolean; path_configured?: boolean };
+  face_recognition?: FaceStatus;
   auth: DepStatus;
   sample_interval_seconds: number;
   model?: ModelSettingsView;
@@ -189,12 +190,106 @@ export type ModelSettingsView = {
   note: string;
 };
 
+export type FaceSettings = {
+  enabled: boolean;
+  cluster_threshold: number;
+  det_threshold: number;
+  min_face_px: number;
+  sync_person_tags: boolean;
+};
+
+export type FaceStatus = {
+  status: "ok" | "disabled" | "error" | "unconfigured" | string;
+  enabled: boolean;
+  available: boolean;
+  backend: string;
+  model: string | null;
+  dim: number;
+  people_count: number;
+  faces_count: number;
+  cluster_threshold: number;
+  sync_person_tags: boolean;
+  message: string;
+};
+
+export type DetectedFaceChoice = {
+  index: number;
+  bbox: number[];
+  det_score: number;
+  crop_data_url: string;
+};
+
+export type PersonSummary = {
+  id: string;
+  name: string | null;
+  display_name: string;
+  cover_face_id: string | null;
+  avatar_url: string | null;
+  face_count: number;
+  asset_count: number;
+  hidden: boolean;
+  locked: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FaceItem = {
+  id: string;
+  asset_id: string;
+  person_id?: string | null;
+  person_name?: string | null;
+  frame_index: number;
+  time_seconds: number;
+  bbox: number[];
+  det_score: number;
+  crop_url: string;
+};
+
+export type PersonAssetItem = {
+  asset_id: string;
+  kind: string;
+  display_name?: string | null;
+  object_key: string;
+  description?: string | null;
+  origin?: string | null;
+  source_url?: string | null;
+  tags: string[];
+  cover_locator?: string | null;
+  video_cover_locator?: string | null;
+  preview_locator?: string | null;
+  best_time_seconds: number;
+  best_frame_index: number;
+  face_count: number;
+  faces: FaceItem[];
+};
+
+export type PersonAssetsResponse = {
+  person: PersonSummary;
+  items: PersonAssetItem[];
+  total: number;
+};
+
+export type AssetFacesResponse = {
+  asset_id: string;
+  people: {
+    id: string;
+    name: string | null;
+    display_name: string;
+    avatar_url: string | null;
+    matched_faces: number;
+    best_time_seconds: number;
+    hidden: boolean;
+  }[];
+  faces: FaceItem[];
+};
+
 export type AppSettings = {
   sample: SampleSettings;
   subtitle_merge?: { max_gap_seconds: number; max_group_duration_seconds: number; max_group_chars: number };
   refresh?: RefreshSettings;
   lifecycle?: { preview_cleanup_on_exclude: boolean };
   search?: SearchSettings;
+  face?: FaceSettings;
   upload?: { max_upload_files: number };
   search_notes?: Record<string, unknown>;
   provisional_note: string;
@@ -237,6 +332,18 @@ export type SearchHit = {
   source_url?: string | null;
   tags?: string[];
   subtitle_hits?: { unit_index: number; time_seconds: number | null; score: number; excerpt?: string | null }[];
+  person_id?: string | null;
+  person_name?: string | null;
+  matched_face_id?: string | null;
+  matched_bbox?: number[] | null;
+  matched_face_crop_locator?: string | null;
+};
+
+export type FaceSearchResponse = SearchResponse & {
+  kind: "face";
+  detected_faces: DetectedFaceChoice[];
+  selected_face_index: number | null;
+  message?: string;
 };
 
 export type LexicalHit = Asset & {
@@ -308,6 +415,7 @@ export type DashboardResponse = {
 };
 
 export type SearchResponse = {
+  kind?: string;
   items: SearchHit[];
   metric: string;
   score_meaning: string;

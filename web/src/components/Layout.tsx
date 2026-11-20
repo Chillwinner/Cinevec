@@ -21,6 +21,7 @@ export default function Layout() {
   const links = [
     { to: "/", label: t("Explore", "探索"), end: true, tour: "nav-explore" },
     { to: "/library", label: t("Library", "资料库"), end: false, tour: "nav-library" },
+    { to: "/people", label: t("People", "人物"), end: false, tour: "nav-people" },
     { to: "/activity", label: t("Activity", "仪表盘"), end: false, tour: "nav-activity" },
     { to: "/settings", label: t("Settings", "设置"), end: false, tour: "nav-settings" },
   ];

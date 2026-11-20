@@ -19,6 +19,7 @@ class StatusService:
         sample_interval: float | None = None,
         subtitle_encoder=None,
         auth_service=None,
+        face_service=None,
     ) -> None:
         self._settings = settings
         self._encoder = encoder
@@ -28,6 +29,7 @@ class StatusService:
         self._sample_interval = sample_interval
         self._subtitle_encoder = subtitle_encoder
         self._auth = auth_service
+        self._face_service = face_service
 
     def snapshot(self) -> dict:
         ff = ffmpeg_status(self._settings)
@@ -68,6 +70,16 @@ class StatusService:
             "auth": self._auth_snapshot(),
             "sample_interval_seconds": interval,
             "resources": resource_snapshot(encoder=self._encoder),
+            "face_recognition": self._face_service.public_status() if self._face_service is not None else {
+                "status": "disabled",
+                "enabled": False,
+                "available": False,
+                "backend": "disabled",
+                "dim": 512,
+                "people_count": 0,
+                "faces_count": 0,
+                "message": "人脸识别默认关闭。",
+            },
         }
 
     def _dep_status(self, dep) -> dict:

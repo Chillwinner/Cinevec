@@ -712,6 +712,7 @@ class SettingsIn(BaseModel):
     lifecycle: dict | None = None
     search: dict | None = None
     upload: dict | None = None
+    face: dict | None = None
     max_upload_files: int | None = None
     mode: str | None = None
     interval_seconds: float | None = None
@@ -932,3 +933,132 @@ def catalog_search(request: Request, body: CatalogIn) -> dict:
         "note": "这是已登记目录的关键字查找，不是向量检索，也不会返回假的相似度结果。",
         "items": items,
     }
+
+
+# ---- Face Recognition & People Clustering ----
+
+
+class PersonPatchIn(BaseModel):
+    name: str | None = None
+    hidden: bool | None = None
+    cover_face_id: str | None = None
+
+
+class PeopleMergeIn(BaseModel):
+    target_id: str
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class FaceReassignIn(BaseModel):
+    target_person_id: str | None = None
+    new_person_name: str | None = None
+
+
+class FaceBackfillIn(BaseModel):
+    force: bool = False
+
+
+class FaceReclusterIn(BaseModel):
+    threshold: float | None = None
+
+
+def _require_face_svc(request: Request):
+    svc = getattr(_c(request), "faces", None)
+    if svc is None:
+        raise AppError("face_unavailable", "人脸服务尚未装配。")
+    return svc
+
+
+@router.post("/search/face")
+async def search_face(
+    request: Request,
+    image: UploadFile = File(...),
+    face_index: int | None = Form(None),
+    top_n: int | None = Form(None),
+    score_threshold: float | None = Form(None),
+) -> dict:
+    data = await image.read()
+    if not data:
+        raise AppError("invalid", "请上传非空人像图片。")
+    svc = _require_face_svc(request)
+    return svc.search_by_image(
+        data,
+        face_index=face_index,
+        top_n=top_n if top_n is not None else 20,
+        score_threshold=score_threshold,
+    )
+
+
+@router.get("/faces/{face_id}/crop")
+def face_crop(request: Request, face_id: str):
+    data, media_type = _require_face_svc(request).crop_bytes(face_id)
+    return Response(content=data, media_type=media_type)
+
+
+@router.get("/assets/{asset_id}/faces")
+def asset_faces(request: Request, asset_id: str) -> dict:
+    return _require_face_svc(request).asset_faces(asset_id)
+
+
+@router.get("/people")
+def list_people(
+    request: Request,
+    include_hidden: bool = False,
+    q: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    return _require_face_svc(request).list_people(
+        include_hidden=include_hidden,
+        q=q,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/people/{person_id}")
+def get_person(request: Request, person_id: str) -> dict:
+    return _require_face_svc(request).get_person(person_id)
+
+
+@router.get("/people/{person_id}/assets")
+def get_person_assets(request: Request, person_id: str) -> dict:
+    return _require_face_svc(request).get_person_assets(person_id)
+
+
+@router.patch("/people/{person_id}")
+def patch_person(request: Request, person_id: str, body: PersonPatchIn) -> dict:
+    has_name = "name" in body.model_fields_set
+    return _require_face_svc(request).update_person(
+        person_id,
+        name=body.name,
+        has_name=has_name,
+        hidden=body.hidden,
+        cover_face_id=body.cover_face_id,
+    )
+
+
+@router.post("/people/merge")
+def merge_people(request: Request, body: PeopleMergeIn) -> dict:
+    return _require_face_svc(request).merge_people(body.target_id, body.source_ids)
+
+
+@router.post("/faces/{face_id}/reassign")
+def reassign_face(request: Request, face_id: str, body: FaceReassignIn) -> dict:
+    return _require_face_svc(request).reassign_face(
+        face_id,
+        target_person_id=body.target_person_id,
+        new_person_name=body.new_person_name,
+    )
+
+
+@router.post("/faces/backfill")
+def backfill_faces(request: Request, body: FaceBackfillIn | None = None) -> dict:
+    payload = body or FaceBackfillIn()
+    return _require_face_svc(request).backfill_all_assets(force=payload.force)
+
+
+@router.post("/faces/recluster")
+def recluster_faces(request: Request, body: FaceReclusterIn | None = None) -> dict:
+    payload = body or FaceReclusterIn()
+    return _require_face_svc(request).recluster_faces(threshold=payload.threshold)

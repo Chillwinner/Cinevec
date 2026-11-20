@@ -40,12 +40,14 @@ class LifecycleService:
         index: VectorIndex,
         settings_getter=None,
         file_store=None,
+        face_service=None,
     ) -> None:
         self._metadata = metadata
         self._tasks = tasks
         self._index = index
         self._settings_getter = settings_getter
         self._store = file_store
+        self._face_service = face_service
 
     def exclude_asset(self, asset_id: str, reason: str = "用户手动排除") -> tuple[Any, Job]:
         asset = self._metadata.get_asset(asset_id)
@@ -114,6 +116,11 @@ class LifecycleService:
             return "completed"
         ck = dict(job.checkpoint or {})
         if not ck.get("vector_delete_succeeded"):
+            if self._face_service is not None:
+                try:
+                    self._face_service.purge_asset_faces(asset.id)
+                except Exception:
+                    pass
             result = self._purge_vectors(asset)
             if not result.succeeded:
                 status = "blocked" if result.pending else "failed"

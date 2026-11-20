@@ -74,6 +74,7 @@ class IndexWriteService:
         dim: int | None = None,
         preprocess_version: str = "",
         space=None,
+        face_service=None,
     ) -> None:
         self._metadata = metadata
         self._tasks = tasks
@@ -87,6 +88,7 @@ class IndexWriteService:
         self._dim = dim
         self._preprocess_version = preprocess_version or ""
         self._space = space
+        self._face_service = face_service
 
     def process_frames(self, job: Job) -> str:
         asset_id = job.asset_id
@@ -119,7 +121,15 @@ class IndexWriteService:
                     "kind": "image",
                 }
             )
-        return self._write_units(job, asset, "frame", records, self._encoder, encode_image=True)
+        outcome = self._write_units(job, asset, "frame", records, self._encoder, encode_image=True)
+        if outcome == "completed" and self._face_service is not None:
+            try:
+                if self._face_service.is_enabled():
+                    self._face_service.index_asset_faces(asset.id)
+            except Exception:
+                # Face recognition is opt-in enrichment and never blocks primary visual indexing.
+                pass
+        return outcome
 
     def process_subtitles(self, job: Job, units: list[dict[str, Any]]) -> str:
         encoder = self._sub_encoder

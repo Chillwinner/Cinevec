@@ -11,13 +11,14 @@ import {
   Sparkle,
   Subtitles,
   Tag,
+  Users,
   X,
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
 import { Portal } from "../components/ui";
 import { useI18n } from "../i18n";
 import { EASE } from "../motion";
-import type { Association, FrameRecord } from "../types";
+import type { AssetFacesResponse, Association, FrameRecord } from "../types";
 
 export type ScreeningTarget = {
   assetId: string;
@@ -50,6 +51,7 @@ export type ScreeningTarget = {
 const hitMethodMap: Record<string, [string, string]> = {
   visual: ["Visual Vector", "画面向量"],
   subtitle: ["Subtitle Semantic", "字幕语义"],
+  face: ["Face Match", "人脸匹配"],
   mixed: ["Visual + Subtitle", "画面 + 字幕"],
   visual_only: ["Visual Only", "仅画面"],
   subtitle_only: ["Subtitle Only", "仅字幕"],
@@ -86,6 +88,7 @@ export default function ScreeningRoom({
   const [activeTime, setActiveTime] = useState<number | null>(target.startSeconds ?? null);
   const [frames, setFrames] = useState<FrameRecord[]>([]);
   const [associations, setAssociations] = useState<Association[]>([]);
+  const [assetPeople, setAssetPeople] = useState<AssetFacesResponse["people"]>([]);
   const [tags, setTags] = useState<string[]>(target.tags ?? []);
   const [tagInput, setTagInput] = useState("");
   const [tagBusy, setTagBusy] = useState(false);
@@ -106,12 +109,20 @@ export default function ScreeningRoom({
     setTags(target.tags ?? []);
     setFrames([]);
     setAssociations([]);
+    setAssetPeople([]);
 
     let cancelled = false;
     void api
       .frames(target.assetId)
       .then((res) => {
         if (!cancelled) setFrames(res.items || []);
+      })
+      .catch(() => undefined);
+
+    void api
+      .assetFaces(target.assetId)
+      .then((res) => {
+        if (!cancelled) setAssetPeople(res.people || []);
       })
       .catch(() => undefined);
 
@@ -529,6 +540,32 @@ export default function ScreeningRoom({
                   ) : null}
                 </dl>
               </div>
+
+              {/* 画面人物 */}
+              {assetPeople.length > 0 ? (
+                <div className="inspector-block">
+                  <div className="inspector-label">
+                    <Users size={13} /> {t("People in Frame", "画面人物")} ({assetPeople.length})
+                  </div>
+                  <div className="inspector-people">
+                    {assetPeople.map((p) => (
+                      <Link
+                        key={p.id}
+                        to={`/people?id=${p.id}`}
+                        onClick={onClose}
+                        className="inspector-person-chip"
+                      >
+                        {p.avatar_url ? (
+                          <img src={authorizedMediaUrl(p.avatar_url)} alt={p.display_name} />
+                        ) : (
+                          <Users size={14} />
+                        )}
+                        <span>{p.display_name}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {/* 标签读写 */}
               <div className="inspector-block">

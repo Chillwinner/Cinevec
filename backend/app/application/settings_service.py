@@ -4,6 +4,7 @@ from dataclasses import asdict, fields
 from typing import Any
 
 from app.domain.errors import AppError
+from app.domain.face import FaceSettings
 from app.domain.lifecycle import LifecycleSettings, RefreshSettings
 from app.domain.media import SampleSettings
 from app.domain.search import SearchSettings, SCORE_MEANING
@@ -20,6 +21,7 @@ REFRESH_KEY = "refresh"
 LIFECYCLE_KEY = "lifecycle"
 SEARCH_KEY = "search"
 UPLOAD_KEY = "upload"
+FACE_KEY = "face"
 
 
 class SettingsService:
@@ -193,8 +195,40 @@ class SettingsService:
         self._save(UPLOAD_KEY, current)
         return current
 
+    def get_face(self) -> FaceSettings:
+        raw = self._load(FACE_KEY)
+        base = FaceSettings(
+            enabled=bool(getattr(self._settings, "face_enabled", False)),
+            cluster_threshold=float(getattr(self._settings, "face_cluster_threshold", 0.45) or 0.45),
+            det_threshold=float(getattr(self._settings, "face_det_threshold", 0.55) or 0.55),
+            min_face_px=int(getattr(self._settings, "face_min_size_px", 24) or 24),
+            sync_person_tags=True,
+        )
+        allowed = {f.name for f in fields(FaceSettings)}
+        updates = {k: raw[k] for k in raw if k in allowed}
+        return FaceSettings(**{**asdict(base), **updates})
+
+    def update_face(self, payload: dict[str, Any]) -> FaceSettings:
+        current = asdict(self.get_face())
+        allowed = {f.name for f in fields(FaceSettings)}
+        for key, value in payload.items():
+            if key not in allowed:
+                raise AppError("invalid", f"不支持的人脸设置项：{key}")
+            current[key] = value
+        settings = FaceSettings(**current)
+        settings.enabled = bool(settings.enabled)
+        settings.sync_person_tags = bool(settings.sync_person_tags)
+        if not (0.15 <= float(settings.cluster_threshold) <= 0.95):
+            raise AppError("invalid", "人脸聚类阈值须在 0.15–0.95 之间")
+        if not (0.1 <= float(settings.det_threshold) <= 0.99):
+            raise AppError("invalid", "人脸检测置信度须在 0.10–0.99 之间")
+        if int(settings.min_face_px) < 8:
+            raise AppError("invalid", "最小人脸像素须 >= 8")
+        self._save(FACE_KEY, asdict(settings))
+        return settings
+
     def update_from_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        known = {"sample", "subtitle_merge", "refresh", "lifecycle", "search", "upload", "max_upload_files"}
+        known = {"sample", "subtitle_merge", "refresh", "lifecycle", "search", "upload", "max_upload_files", "face"}
         sample_fields = {f.name for f in fields(SampleSettings)}
         # 兼容第一、二阶段只传扁平采样字段
         flat = {k: v for k, v in payload.items() if k in sample_fields}
@@ -212,6 +246,8 @@ class SettingsService:
             self.update_search(payload["search"])
         if "upload" in payload and isinstance(payload["upload"], dict):
             self.update_upload(payload["upload"])
+        if "face" in payload and isinstance(payload["face"], dict):
+            self.update_face(payload["face"])
         if "max_upload_files" in payload:
             self.update_upload({"max_upload_files": payload["max_upload_files"]})
         unknown = [k for k in payload if k not in known and k not in sample_fields]
@@ -228,6 +264,7 @@ class SettingsService:
         life = _asdict(self.get_lifecycle())
         search = _asdict(self.get_search())
         upload = self.get_upload()
+        face = _asdict(self.get_face())
         ff = ffmpeg_status(self._settings)
         store = self._file_store
         return {
@@ -237,6 +274,7 @@ class SettingsService:
             "lifecycle": life,
             "search": search,
             "upload": upload,
+            "face": face,
             "search_notes": {
                 "score_meaning": SCORE_MEANING,
                 "counting_mode": "默认 asset（图片或视频统一按资产计入同一 TopN）为待确认默认；接口保留 video 以支持此前讨论的 Top 20 个视频，未硬改该约定。",

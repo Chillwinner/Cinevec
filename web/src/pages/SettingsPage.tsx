@@ -10,6 +10,7 @@ import {
   Rows,
   SlidersHorizontal,
   Timer,
+  Users,
 } from "@phosphor-icons/react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
@@ -17,7 +18,15 @@ import { useI18n } from "../i18n";
 import ConnectDrive, { probeLabel } from "../components/ConnectDrive";
 import { Banner, Empty, PageHead, Pill } from "../components/ui";
 import { EASE, softSpring } from "../motion";
-import type { AppSettings, SampleSettings, Source, SystemStatus } from "../types";
+import type { AppSettings, FaceSettings, SampleSettings, Source, SystemStatus } from "../types";
+
+const emptyFace: FaceSettings = {
+  enabled: false,
+  cluster_threshold: 0.45,
+  det_threshold: 0.55,
+  min_face_px: 24,
+  sync_person_tags: true,
+};
 
 const modeDefs: { value: SampleSettings["mode"]; labelEn: string; labelZh: string; hintEn: string; hintZh: string; icon: ReactNode }[] = [
   { value: "interval_seconds", labelEn: "Interval (sec)", labelZh: "按时间间隔", hintEn: "Default: 1 frame every 5s.", hintZh: "默认每 5 秒取 1 帧。", icon: <Clock size={17} /> },
@@ -209,6 +218,7 @@ export default function SettingsPage() {
           [t("Milvus Vector DB", "检索库"), status.milvus],
           [t("Vision Model", "看图模型"), status.embedding_model],
           [t("Subtitle Encoder", "字幕模型"), status.subtitle_encoder],
+          [t("Face Recognition", "人脸识别"), status.face_recognition],
           [t("Authentication", "登录"), status.auth],
         ] as const
       ).filter((item) => item[1])
@@ -568,6 +578,159 @@ export default function SettingsPage() {
           </div>
         </div>
       </Panel>
+
+      {settings ? (
+        <Panel
+          icon={<Users size={17} />}
+          title={t("Face Recognition & People Clustering", "人脸识别与人物聚类")}
+          hint={t(
+            "Disabled by default (0 extra memory). Enable here or via PICA_FACE_ENABLED=true. Person names automatically sync to asset tags.",
+            "默认关闭（0 额外内存）。开启后自动检测人脸并按相似度聚类，人物起名后会自动写入资产标签。",
+          )}
+          delay={0.22}
+        >
+          <div className="meta-list" style={{ marginBottom: 12 }}>
+            <span>
+              <Pill status={status?.face_recognition?.enabled ? (status.face_recognition.available ? "ok" : "warn") : "unconfigured"}>
+                {status?.face_recognition?.enabled
+                  ? status.face_recognition.available
+                    ? t("Enabled", "已开启")
+                    : t("Unavailable", "模型未就绪")
+                  : t("Disabled", "默认关闭")}
+              </Pill>
+            </span>
+            {status?.face_recognition ? (
+              <>
+                <span>{t("People", "人物")}: {status.face_recognition.people_count}</span>
+                <span>{t("Faces", "人脸")}: {status.face_recognition.faces_count}</span>
+                <span>{status.face_recognition.message}</span>
+              </>
+            ) : null}
+          </div>
+
+          <div className="settings-grid" style={{ marginBottom: 12 }}>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={Boolean(settings.face?.enabled)}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    face: { ...(settings.face ?? emptyFace), enabled: e.target.checked },
+                  })
+                }
+              />
+              <span>{t("Enable Face Recognition (off by default)", "开启人脸识别（默认关闭）")}</span>
+            </label>
+
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={settings.face?.sync_person_tags ?? true}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    face: { ...(settings.face ?? emptyFace), sync_person_tags: e.target.checked },
+                  })
+                }
+              />
+              <span>{t("Sync person names to asset tags", "人物命名自动同步至资产标签")}</span>
+            </label>
+
+            <label className="field">
+              <span>{t("Clustering threshold (0.20–0.85)", "人脸聚类阈值 (0.20–0.85)")}</span>
+              <input
+                className="input"
+                type="number"
+                step={0.01}
+                min={0.2}
+                max={0.85}
+                value={settings.face?.cluster_threshold ?? 0.45}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    face: {
+                      ...(settings.face ?? emptyFace),
+                      cluster_threshold: Number(e.target.value) || 0.45,
+                    },
+                  })
+                }
+              />
+            </label>
+          </div>
+
+          <div className="panel-actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void api
+                  .putSettings({ face: settings.face ?? emptyFace })
+                  .then((next) => {
+                    setSettings(next);
+                    setNotice(t("Face recognition settings saved.", "人脸识别设置已保存。"));
+                    return load();
+                  })
+                  .catch((err: Error) => setError(err.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {t("Save Face Settings", "保存人脸设置")}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !(settings.face?.enabled)}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void api
+                  .backfillFaces(false)
+                  .then((res) => {
+                    setNotice(
+                      t(
+                        `Backfill finished: ${String(res.processed_assets ?? 0)} assets, ${String(res.total_faces ?? 0)} faces.`,
+                        `回填完成：扫描 ${String(res.processed_assets ?? 0)} 个媒体，索引 ${String(res.total_faces ?? 0)} 张人脸。`,
+                      ),
+                    );
+                    return load();
+                  })
+                  .catch((err: Error) => setError(err.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {t("Backfill Existing Media", "扫描已有媒体人脸")}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void api
+                  .reclusterFaces(settings.face?.cluster_threshold)
+                  .then((res) => {
+                    setNotice(
+                      t(
+                        `Recluster finished: ${String(res.reassigned_faces ?? 0)} reassigned across ${String(res.people_count ?? 0)} people.`,
+                        `重聚类完成：重新分配 ${String(res.reassigned_faces ?? 0)} 张人脸，共 ${String(res.people_count ?? 0)} 个人物。`,
+                      ),
+                    );
+                    return load();
+                  })
+                  .catch((err: Error) => setError(err.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {t("Recluster Unnamed Faces", "重新聚类未命名人脸")}
+            </button>
+          </div>
+        </Panel>
+      ) : null}
 
       <button type="button" className="advanced-toggle" onClick={() => setShowAdvanced((value) => !value)}>
         <SlidersHorizontal size={16} />

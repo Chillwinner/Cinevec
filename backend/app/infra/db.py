@@ -532,6 +532,46 @@ def init_db(conn: sqlite3.Connection) -> None:
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (12, ?)",
             (iso(),),
         )
+    if _current_version(conn) < 13:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS people (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                cover_face_id TEXT,
+                centroid_blob BLOB,
+                face_count INTEGER NOT NULL DEFAULT 0,
+                hidden INTEGER NOT NULL DEFAULT 0,
+                locked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_people_name ON people(name);
+
+            CREATE TABLE IF NOT EXISTS faces (
+                id TEXT PRIMARY KEY,
+                asset_id TEXT NOT NULL,
+                frame_index INTEGER NOT NULL DEFAULT 0,
+                time_seconds REAL NOT NULL DEFAULT 0,
+                bbox_json TEXT NOT NULL DEFAULT '[]',
+                det_score REAL NOT NULL DEFAULT 0,
+                crop_key TEXT,
+                embedding_blob BLOB NOT NULL,
+                person_id TEXT,
+                collection TEXT NOT NULL DEFAULT '',
+                remote_vector_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(asset_id) REFERENCES assets(id),
+                FOREIGN KEY(person_id) REFERENCES people(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_faces_asset ON faces(asset_id);
+            CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+            """
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (13, ?)",
+            (iso(),),
+        )
     conn.commit()
 
 

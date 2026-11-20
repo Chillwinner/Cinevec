@@ -85,6 +85,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        INSTALL_FACE: ${PICA_FACE_INSTALL:-false}
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -121,6 +123,13 @@ services:
       PICA_MAX_UPLOAD_FILES: ${PICA_MAX_UPLOAD_FILES:-20}
       PICA_AUTH_ENABLED: ${PICA_AUTH_ENABLED:-false}
       PICA_JWT_SECRET: ${PICA_JWT_SECRET:-}
+      # 可选人脸识别与人物聚类（默认关闭，按需开启）
+      PICA_FACE_ENABLED: ${PICA_FACE_ENABLED:-false}
+      PICA_FACE_BACKEND: ${PICA_FACE_BACKEND:-local_insightface}
+      PICA_FACE_MODEL: ${PICA_FACE_MODEL:-buffalo_s}
+      PICA_FACE_CLUSTER_THRESHOLD: ${PICA_FACE_CLUSTER_THRESHOLD:-0.45}
+      PICA_FACE_HTTP_BASE_URL: ${PICA_FACE_HTTP_BASE_URL:-}
+      PICA_FACE_CACHE_DIR: ${PICA_FACE_CACHE_DIR:-data/models/insightface}
     ports:
       - "${CINEVEC_API_PORT:-8008}:8008"
     volumes:

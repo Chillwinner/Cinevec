@@ -1,5 +1,22 @@
 import { authorizationHeader, clearToken, readToken } from "./authStorage";
-import type { AppSettings, Asset, AssetListResponse, Association, AuthPublicStatus, DashboardResponse, FrameRecord, Job, ObjectEntry, SearchResponse, Source, SystemStatus } from "./types";
+import type {
+  AppSettings,
+  Asset,
+  AssetFacesResponse,
+  AssetListResponse,
+  Association,
+  AuthPublicStatus,
+  DashboardResponse,
+  FaceSearchResponse,
+  FrameRecord,
+  Job,
+  ObjectEntry,
+  PersonAssetsResponse,
+  PersonSummary,
+  SearchResponse,
+  Source,
+  SystemStatus,
+} from "./types";
 
 export function authorizedMediaUrl(path: string) {
   if (!path) return path;
@@ -189,6 +206,51 @@ export const api = {
     if (extra?.score_threshold != null) body.append("score_threshold", String(extra.score_threshold));
     return postFormData<SearchResponse>("/api/search/image", body);
   },
+  searchFace: async (image: File, extra?: { face_index?: number | null; top_n?: number; score_threshold?: number | null }) => {
+    const body = new FormData();
+    body.append("image", image, image.name || "face.jpg");
+    if (extra?.face_index != null) body.append("face_index", String(extra.face_index));
+    if (extra?.top_n != null) body.append("top_n", String(extra.top_n));
+    if (extra?.score_threshold != null) body.append("score_threshold", String(extra.score_threshold));
+    return postFormData<FaceSearchResponse>("/api/search/face", body);
+  },
+  people: (opts?: { includeHidden?: boolean; q?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.includeHidden) params.set("include_hidden", "true");
+    if (opts?.q) params.set("q", opts.q);
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.offset != null) params.set("offset", String(opts.offset));
+    const query = params.toString();
+    return request<{ items: PersonSummary[]; total: number; limit: number; offset: number }>(query ? `/api/people?${query}` : "/api/people");
+  },
+  person: (personId: string) => request<PersonSummary>(`/api/people/${personId}`),
+  personAssets: (personId: string, opts?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.offset != null) params.set("offset", String(opts.offset));
+    const query = params.toString();
+    return request<PersonAssetsResponse>(query ? `/api/people/${personId}/assets?${query}` : `/api/people/${personId}/assets`);
+  },
+  updatePerson: (personId: string, body: { name?: string | null; hidden?: boolean; cover_face_id?: string }) =>
+    request<PersonSummary>(`/api/people/${personId}`, { method: "PATCH", body: JSON.stringify(body) }),
+  mergePeople: (targetId: string, sourceIds: string[]) =>
+    request<{ person: PersonSummary; merged_faces: number }>("/api/people/merge", {
+      method: "POST",
+      body: JSON.stringify({ target_id: targetId, source_ids: sourceIds }),
+    }),
+  reassignFace: (faceId: string, body: { target_person_id?: string | null; new_person_name?: string | null }) =>
+    request<{ face_id: string; person: PersonSummary }>(`/api/faces/${faceId}/reassign`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  assetFaces: (assetId: string) => request<AssetFacesResponse>(`/api/assets/${assetId}/faces`),
+  backfillFaces: (force = false) =>
+    request<Record<string, unknown>>("/api/faces/backfill", { method: "POST", body: JSON.stringify({ force }) }),
+  reclusterFaces: (threshold?: number) =>
+    request<Record<string, unknown>>("/api/faces/recluster", {
+      method: "POST",
+      body: JSON.stringify(threshold != null ? { threshold } : {}),
+    }),
   getSettings: () => request<AppSettings>("/api/settings"),
   putSettings: (body: Record<string, unknown>) =>
     request<AppSettings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),

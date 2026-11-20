@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import ActivityPage from "./pages/ActivityPage";
 import LibraryPage from "./pages/LibraryPage";
 import LoginPage from "./pages/LoginPage";
+import PeoplePage from "./pages/PeoplePage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 
@@ -15,6 +16,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<SearchPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/people" element={<PeoplePage />} />
           <Route path="/activity" element={<ActivityPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/search" element={<Navigate to="/" replace />} />

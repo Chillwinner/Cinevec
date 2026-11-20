@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   SpinnerGap,
   SquaresFour,
+  User,
   X,
 } from "@phosphor-icons/react";
 import { api, authorizedMediaUrl } from "../api";
@@ -33,9 +34,9 @@ import ScreeningRoom, { type ScreeningTarget } from "../cinema/ScreeningRoom";
 import AddFlow from "../components/AddFlow";
 import { AnimatedNumber, Banner, Empty, Segmented } from "../components/ui";
 import { EASE, spring } from "../motion";
-import type { Asset, LexicalHit, SearchHit, SearchResponse, SystemStatus } from "../types";
+import type { Asset, DetectedFaceChoice, LexicalHit, SearchHit, SearchResponse, SystemStatus } from "../types";
 
-type Mode = "text" | "image" | "lexical";
+type Mode = "text" | "image" | "face" | "lexical";
 type HitFilter = "all" | "image" | "video" | "subtitle";
 type ViewMode = "cinema" | "grid";
 
@@ -43,6 +44,7 @@ function getSourceLabel(lang: Lang, key: string) {
   const map: Record<string, [string, string]> = {
     visual: ["Visual", "画面"],
     subtitle: ["Subtitle", "字幕"],
+    face: ["Face Match", "人脸匹配"],
     mixed: ["Visual + Subtitle", "画面 + 字幕"],
     visual_only: ["Visual only", "仅画面"],
     subtitle_only: ["Subtitle only", "仅字幕"],
@@ -150,6 +152,9 @@ export default function SearchPage() {
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [detectedFaces, setDetectedFaces] = useState<DetectedFaceChoice[]>([]);
+  const [selectedFaceIndex, setSelectedFaceIndex] = useState<number | null>(null);
+  const [faceMessage, setFaceMessage] = useState<string | null>(null);
 
   const [libraryTotal, setLibraryTotal] = useState<number | null>(null);
   const [indexedTotal, setIndexedTotal] = useState<number | null>(null);
@@ -200,6 +205,9 @@ export default function SearchPage() {
     setResult(null);
     setLexicalItems(null);
     setLexicalNote(null);
+    setDetectedFaces([]);
+    setSelectedFaceIndex(null);
+    setFaceMessage(null);
     setHitFilter("all");
     setActiveIndex(0);
     setScrollFloat(0);
@@ -207,6 +215,9 @@ export default function SearchPage() {
 
   function setPickedImage(file: File | null) {
     setImageFile(file);
+    setDetectedFaces([]);
+    setSelectedFaceIndex(null);
+    setFaceMessage(null);
     setImagePreview((current) => {
       if (current) URL.revokeObjectURL(current);
       return file ? URL.createObjectURL(file) : null;
@@ -238,6 +249,13 @@ export default function SearchPage() {
       } else if (mode === "image") {
         if (!imageFile) return;
         setResult(await api.searchImage(imageFile, extra));
+      } else if (mode === "face") {
+        if (!imageFile) return;
+        const data = await api.searchFace(imageFile, { ...extra, face_index: selectedFaceIndex });
+        setResult(data);
+        setDetectedFaces(data.detected_faces || []);
+        setSelectedFaceIndex(data.selected_face_index ?? (data.detected_faces?.length ? 0 : null));
+        setFaceMessage(data.message || null);
       } else {
         const data = await api.lexicalSearch(query);
         setLexicalNote((data.notes || []).join(" "));
@@ -245,6 +263,26 @@ export default function SearchPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("No results, or search is not connected yet", "没搜到，或检索还没接通"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectDetectedFace(idx: number) {
+    if (!imageFile || busy) return;
+    setSelectedFaceIndex(idx);
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await api.searchFace(imageFile, { ...extra, face_index: idx });
+      setResult(data);
+      setDetectedFaces(data.detected_faces || []);
+      setSelectedFaceIndex(data.selected_face_index ?? idx);
+      setFaceMessage(data.message || null);
+      setActiveIndex(0);
+      setScrollFloat(0);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Face search failed", "人脸搜索失败"));
     } finally {
       setBusy(false);
     }
@@ -271,7 +309,7 @@ export default function SearchPage() {
     event.currentTarget.style.setProperty("--spot-y", `${event.clientY - rect.top}px`);
   }
 
-  const canSubmit = mode === "image" ? Boolean(imageFile) : Boolean(query.trim());
+  const canSubmit = mode === "image" || mode === "face" ? Boolean(imageFile) : Boolean(query.trim());
   const searched = Boolean(result || lexicalItems);
   const canVisual = Boolean(connected && (indexedTotal ?? 0) > 0);
 
@@ -421,7 +459,7 @@ export default function SearchPage() {
         setDragOver(false);
         if (!file) return;
         event.preventDefault();
-        setMode("image");
+        if (mode !== "face") setMode("image");
         setPickedImage(file);
         resetResults();
       }}
@@ -431,7 +469,7 @@ export default function SearchPage() {
         <div className="stage-hud-left">
           {result ? (
             <div className="stage-status-chip">
-              <span className="status-tag">SEMANTIC CUT</span>
+              <span className="status-tag">{result.kind === "face" ? "FACE MATCH" : "SEMANTIC CUT"}</span>
               <strong>{visibleHits.length}</strong>
               <span>{t("matching frames", "个相近画面")}</span>
             </div>
@@ -663,6 +701,32 @@ export default function SearchPage() {
 
       {/* 底部悬浮导演控制台（Director Search Dock） */}
       <div className="director-dock-wrap">
+        {mode === "face" && (detectedFaces.length > 0 || faceMessage) ? (
+          <div className="face-picker-bar" role="region" aria-label={t("Detected faces", "检测到的人脸")}>
+            {detectedFaces.length > 0 ? (
+              <>
+                <span className="face-picker-label">
+                  {t("Detected faces", "检测到的人脸")} ({detectedFaces.length}):
+                </span>
+                {detectedFaces.map((df) => (
+                  <button
+                    key={df.index}
+                    type="button"
+                    className={`face-choice-btn${selectedFaceIndex === df.index ? " active" : ""}`}
+                    onClick={() => void selectDetectedFace(df.index)}
+                    disabled={busy}
+                  >
+                    <img src={df.crop_data_url} alt="" />
+                    <span>#{df.index + 1}</span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              <span className="face-picker-label">{faceMessage}</span>
+            )}
+          </div>
+        ) : null}
+
         <AnimatePresence>
           {tuneOpen && mode !== "lexical" ? (
             <motion.div
@@ -730,6 +794,18 @@ export default function SearchPage() {
             <button
               type="button"
               role="tab"
+              aria-selected={mode === "face"}
+              className={mode === "face" ? "active" : ""}
+              onClick={() => {
+                setMode("face");
+                setError(null);
+              }}
+            >
+              {t("Face", "以脸搜人")}
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={mode === "lexical"}
               className={mode === "lexical" ? "active" : ""}
               onClick={() => {
@@ -743,17 +819,23 @@ export default function SearchPage() {
 
           <div className="dock-divider" />
 
-          {mode === "image" ? (
+          {mode === "image" || mode === "face" ? (
             <div className="dock-input-area" data-tour="search-input">
               {imagePreview ? (
                 <img className="dock-query-thumb" src={imagePreview} alt="" />
               ) : (
                 <span className="dock-query-icon">
-                  <ImageSquare size={17} />
+                  {mode === "face" ? <User size={17} /> : <ImageSquare size={17} />}
                 </span>
               )}
               <label className="dock-file-label">
-                <span>{imageFile ? imageFile.name : t("Choose or drop a reference image...", "选择或拖入一张样图...")}</span>
+                <span>
+                  {imageFile
+                    ? imageFile.name
+                    : mode === "face"
+                      ? t("Choose or drop a portrait to search by face...", "选择或拖入一张包含人脸的照片...")
+                      : t("Choose or drop a reference image...", "选择或拖入一张样图...")}
+                </span>
                 <input type="file" accept="image/*" hidden disabled={busy} onChange={onPickImage} />
               </label>
               {imageFile ? (
@@ -1000,6 +1082,23 @@ function SearchHitCard({
       </button>
 
       <div className="hit-body">
+        {item.person_name || item.matched_face_crop_locator ? (
+          item.person_id ? (
+            <Link className="hit-person-badge" to={`/people?id=${item.person_id}`}>
+              {item.matched_face_crop_locator ? (
+                <img src={authorizedMediaUrl(item.matched_face_crop_locator)} alt="" />
+              ) : null}
+              <span>{item.person_name || t("Unnamed person", "未命名人物")}</span>
+            </Link>
+          ) : (
+            <span className="hit-person-badge">
+              {item.matched_face_crop_locator ? (
+                <img src={authorizedMediaUrl(item.matched_face_crop_locator)} alt="" />
+              ) : null}
+              <span>{item.person_name || t("Unnamed person", "未命名人物")}</span>
+            </span>
+          )
+        ) : null}
         <strong className="hit-name">{fileName(item)}</strong>
         <p className="hit-meta">
           <span>{method}</span>

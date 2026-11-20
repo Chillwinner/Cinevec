@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from app.domain.errors import ConflictError, NotFoundError
+from app.domain.face import average_normalized_vectors, decode_vector_blob, encode_vector_blob
 from app.domain.models import Asset, Job, JobStatus, Source
 from app.infra.clock import iso, now, parse_dt
 from app.infra.object_keys import display_name_from_key
@@ -1452,6 +1453,290 @@ class SqliteMetadataRepository:
         updated = self.get_api_token(token_id)
         assert updated is not None
         return updated
+
+    # ---- People & Faces (Migration v13) ----
+
+    def _face_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["bbox"] = json.loads(item.pop("bbox_json", "[]") or "[]")
+        return item
+
+    def _person_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["hidden"] = bool(item.get("hidden"))
+        item["locked"] = bool(item.get("locked"))
+        return item
+
+    def insert_face(self, record: dict[str, Any]) -> dict[str, Any]:
+        face_id = str(record.get("id") or uuid.uuid4())
+        ts = record.get("created_at") or iso()
+        bbox_json = json.dumps(list(record.get("bbox") or []))
+        emb_blob = record.get("embedding_blob")
+        if emb_blob is None and record.get("embedding") is not None:
+            emb_blob = encode_vector_blob(record["embedding"])
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO faces(
+                id, asset_id, frame_index, time_seconds, bbox_json, det_score,
+                crop_key, embedding_blob, person_id, collection, remote_vector_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                face_id,
+                str(record["asset_id"]),
+                int(record.get("frame_index") or 0),
+                float(record.get("time_seconds") or 0.0),
+                bbox_json,
+                float(record.get("det_score") or 0.0),
+                record.get("crop_key"),
+                bytes(emb_blob or b""),
+                record.get("person_id"),
+                str(record.get("collection") or ""),
+                str(record.get("remote_vector_id") or ""),
+                ts,
+            ),
+        )
+        self._conn.commit()
+        saved = self.get_face(face_id)
+        assert saved is not None
+        return saved
+
+    def get_face(self, face_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute("SELECT * FROM faces WHERE id = ?", (face_id,)).fetchone()
+        return self._face_from_row(row) if row else None
+
+    def list_faces_by_asset(self, asset_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            "SELECT * FROM faces WHERE asset_id = ? ORDER BY frame_index ASC, det_score DESC",
+            (asset_id,),
+        ).fetchall()
+        return [self._face_from_row(r) for r in rows]
+
+    def list_faces_by_person(self, person_id: str, *, exclude_excluded_assets: bool = True) -> list[dict[str, Any]]:
+        sql = "SELECT f.* FROM faces f JOIN assets a ON a.id = f.asset_id WHERE f.person_id = ?"
+        if exclude_excluded_assets:
+            sql += " AND COALESCE(a.excluded, 0) = 0"
+        sql += " ORDER BY f.det_score DESC, f.created_at ASC"
+        rows = self._conn.execute(sql, (person_id,)).fetchall()
+        return [self._face_from_row(r) for r in rows]
+
+    def list_all_faces(self, *, exclude_excluded_assets: bool = True) -> list[dict[str, Any]]:
+        sql = "SELECT f.* FROM faces f JOIN assets a ON a.id = f.asset_id"
+        if exclude_excluded_assets:
+            sql += " WHERE COALESCE(a.excluded, 0) = 0"
+        sql += " ORDER BY f.created_at ASC"
+        rows = self._conn.execute(sql).fetchall()
+        return [self._face_from_row(r) for r in rows]
+
+    def update_face_person(self, face_id: str, person_id: str | None) -> dict[str, Any] | None:
+        self._conn.execute("UPDATE faces SET person_id = ? WHERE id = ?", (person_id, face_id))
+        self._conn.commit()
+        return self.get_face(face_id)
+
+    def delete_faces_by_asset(self, asset_id: str) -> list[dict[str, Any]]:
+        existing = self.list_faces_by_asset(asset_id)
+        if not existing:
+            return []
+        affected_people = {str(f["person_id"]) for f in existing if f.get("person_id")}
+        self._conn.execute("DELETE FROM faces WHERE asset_id = ?", (asset_id,))
+        self._conn.commit()
+        for pid in affected_people:
+            self.recompute_person_stats(pid)
+        return existing
+
+    def count_faces(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS cnt FROM faces f JOIN assets a ON a.id = f.asset_id WHERE COALESCE(a.excluded, 0) = 0"
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def create_person(
+        self,
+        *,
+        person_id: str | None = None,
+        name: str | None = None,
+        cover_face_id: str | None = None,
+        centroid_blob: bytes | None = None,
+        face_count: int = 0,
+        hidden: bool = False,
+        locked: bool = False,
+    ) -> dict[str, Any]:
+        pid = person_id or str(uuid.uuid4())
+        ts = iso()
+        self._conn.execute(
+            """
+            INSERT INTO people(
+                id, name, cover_face_id, centroid_blob, face_count, hidden, locked, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                pid,
+                name,
+                cover_face_id,
+                centroid_blob,
+                int(face_count),
+                1 if hidden else 0,
+                1 if locked else 0,
+                ts,
+                ts,
+            ),
+        )
+        self._conn.commit()
+        created = self.get_person(pid)
+        assert created is not None
+        return created
+
+    def get_person(self, person_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute("SELECT * FROM people WHERE id = ?", (person_id,)).fetchone()
+        return self._person_from_row(row) if row else None
+
+    def list_people(
+        self,
+        *,
+        include_hidden: bool = False,
+        q: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        clauses = ["face_count > 0"]
+        params: list[Any] = []
+        if not include_hidden:
+            clauses.append("hidden = 0")
+        if q and q.strip():
+            clauses.append("IFNULL(name, '') LIKE ? ESCAPE char(92)")
+            params.append(self._like_contains(q.strip()))
+        where = "WHERE " + " AND ".join(clauses)
+        rows = self._conn.execute(
+            f"""
+            SELECT * FROM people
+            {where}
+            ORDER BY CASE WHEN IFNULL(name, '') != '' THEN 0 ELSE 1 END ASC, face_count DESC, created_at ASC
+            LIMIT ? OFFSET ?
+            """,
+            (*params, int(limit), int(offset)),
+        ).fetchall()
+        return [self._person_from_row(r) for r in rows]
+
+    def count_people(self, *, include_hidden: bool = False, q: str | None = None) -> int:
+        clauses = ["face_count > 0"]
+        params: list[Any] = []
+        if not include_hidden:
+            clauses.append("hidden = 0")
+        if q and q.strip():
+            clauses.append("IFNULL(name, '') LIKE ? ESCAPE char(92)")
+            params.append(self._like_contains(q.strip()))
+        where = "WHERE " + " AND ".join(clauses)
+        row = self._conn.execute(f"SELECT COUNT(*) AS cnt FROM people {where}", tuple(params)).fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def update_person(self, person_id: str, **fields: Any) -> dict[str, Any] | None:
+        if self.get_person(person_id) is None:
+            return None
+        updates: dict[str, Any] = {}
+        for col in ("name", "cover_face_id", "centroid_blob", "face_count"):
+            if col in fields:
+                updates[col] = fields[col]
+        if "hidden" in fields:
+            updates["hidden"] = 1 if fields["hidden"] else 0
+        if "locked" in fields:
+            updates["locked"] = 1 if fields["locked"] else 0
+        if not updates:
+            return self.get_person(person_id)
+        updates["updated_at"] = iso()
+        assignments = ", ".join(f"{k} = ?" for k in updates)
+        self._conn.execute(f"UPDATE people SET {assignments} WHERE id = ?", (*updates.values(), person_id))
+        self._conn.commit()
+        return self.get_person(person_id)
+
+    def delete_person(self, person_id: str) -> None:
+        self._conn.execute("UPDATE faces SET person_id = NULL WHERE person_id = ?", (person_id,))
+        self._conn.execute("DELETE FROM people WHERE id = ?", (person_id,))
+        self._conn.commit()
+
+    def recompute_person_stats(self, person_id: str) -> dict[str, Any] | None:
+        person = self.get_person(person_id)
+        if person is None:
+            return None
+        faces = self.list_faces_by_person(person_id, exclude_excluded_assets=True)
+        if not faces:
+            if not person.get("locked") and not (person.get("name") or "").strip():
+                self.delete_person(person_id)
+                return None
+            return self.update_person(person_id, face_count=0, centroid_blob=None, cover_face_id=None)
+        face_ids = {f["id"] for f in faces}
+        cover_id = person.get("cover_face_id")
+        if not cover_id or cover_id not in face_ids:
+            cover_id = faces[0]["id"]
+        vecs = [decode_vector_blob(f.get("embedding_blob")) for f in faces]
+        centroid = average_normalized_vectors([v for v in vecs if v])
+        centroid_blob = encode_vector_blob(centroid) if centroid else None
+        return self.update_person(
+            person_id,
+            face_count=len(faces),
+            cover_face_id=cover_id,
+            centroid_blob=centroid_blob,
+        )
+
+    def list_asset_ids_by_person(self, person_id: str) -> list[str]:
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT f.asset_id
+            FROM faces f
+            JOIN assets a ON a.id = f.asset_id
+            WHERE f.person_id = ? AND COALESCE(a.excluded, 0) = 0
+            ORDER BY a.updated_at DESC
+            """,
+            (person_id,),
+        ).fetchall()
+        return [str(r["asset_id"]) for r in rows]
+
+    def count_distinct_assets_by_person(self, person_id: str) -> int:
+        row = self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT f.asset_id) AS cnt
+            FROM faces f
+            JOIN assets a ON a.id = f.asset_id
+            WHERE f.person_id = ? AND COALESCE(a.excluded, 0) = 0
+            """,
+            (person_id,),
+        ).fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def list_people_for_asset(self, asset_id: str) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT p.*, COUNT(f.id) AS matched_faces, MAX(f.det_score) AS max_det_score,
+                   (SELECT f2.id FROM faces f2 WHERE f2.asset_id = ? AND f2.person_id = p.id ORDER BY f2.det_score DESC LIMIT 1) AS asset_face_id,
+                   (SELECT f2.time_seconds FROM faces f2 WHERE f2.asset_id = ? AND f2.person_id = p.id ORDER BY f2.det_score DESC LIMIT 1) AS best_time_seconds
+            FROM faces f
+            JOIN people p ON p.id = f.person_id
+            WHERE f.asset_id = ?
+            GROUP BY p.id
+            ORDER BY matched_faces DESC, max_det_score DESC
+            """,
+            (asset_id, asset_id, asset_id),
+        ).fetchall()
+        out = []
+        for r in rows:
+            item = self._person_from_row(r)
+            out.append(item)
+        return out
+
+    def asset_has_person_named(self, asset_id: str, name: str, exclude_person_id: str | None = None) -> bool:
+        target = (name or "").strip()
+        if not target:
+            return False
+        sql = """
+            SELECT 1 FROM faces f
+            JOIN people p ON p.id = f.person_id
+            WHERE f.asset_id = ? AND TRIM(IFNULL(p.name, '')) = ?
+        """
+        params: list[Any] = [asset_id, target]
+        if exclude_person_id:
+            sql += " AND p.id != ?"
+            params.append(exclude_person_id)
+        sql += " LIMIT 1"
+        return self._conn.execute(sql, tuple(params)).fetchone() is not None
 
 
 EMBED_LANE_STAGES = (

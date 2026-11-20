@@ -16,6 +16,7 @@ from app.application.tag_service import TagService
 from app.application.upload_service import UploadService
 from app.application.auth_service import AuthService
 from app.application.api_token_service import ApiTokenService
+from app.application.face_service import FaceService
 from app.infra.auth import DefaultAuthorizationPolicy
 from app.application.rebuild_service import RebuildService
 from app.infra.config import Settings
@@ -42,3 +43,4 @@ class Container:
     dashboard: DashboardService | None = None
     media: MediaService | None = None
     api_tokens: ApiTokenService | None = None
+    faces: FaceService | None = None

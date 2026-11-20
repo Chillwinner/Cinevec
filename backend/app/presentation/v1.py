@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.application.plugin_progress import (
@@ -34,6 +35,8 @@ def _rewrite_v1_locators(obj: Any) -> Any:
             return "/api/v1/previews/" + obj[len("/api/previews/"):]
         if obj.startswith("/api/assets/"):
             return "/api/v1/assets/" + obj[len("/api/assets/"):]
+        if obj.startswith("/api/faces/"):
+            return "/api/v1/faces/" + obj[len("/api/faces/"):]
         return obj
     if isinstance(obj, list):
         return [_rewrite_v1_locators(item) for item in obj]
@@ -291,3 +294,49 @@ def v1_search_metadata_get(request: Request, q: str = Query(...), source_id: str
 @v1_router.post("/search/metadata")
 def v1_search_metadata_post(request: Request, body: V1MetadataSearchIn) -> dict[str, Any]:
     return _v1_metadata_search(request, body.query, body.source_id)
+
+
+@v1_router.post("/search/face")
+async def v1_search_face(
+    request: Request,
+    image: UploadFile = File(...),
+    face_index: int | None = Form(None),
+    top_n: int | None = Form(None),
+    score_threshold: float | None = Form(None),
+) -> dict[str, Any]:
+    data = await image.read()
+    if not data:
+        raise AppError("invalid", "请上传非空人像图片。")
+    svc = getattr(_c(request), "faces", None)
+    if svc is None:
+        raise AppError("face_unavailable", "人脸服务尚未装配。")
+    res = svc.search_by_image(
+        data,
+        face_index=face_index,
+        top_n=top_n if top_n is not None else 20,
+        score_threshold=score_threshold,
+    )
+    return _rewrite_v1_locators(res)
+
+
+@v1_router.get("/faces/{face_id}/crop")
+def v1_face_crop(request: Request, face_id: str):
+    svc = getattr(_c(request), "faces", None)
+    if svc is None:
+        raise AppError("face_unavailable", "人脸服务尚未装配。")
+    data, media_type = svc.crop_bytes(face_id)
+    return Response(content=data, media_type=media_type)
+
+
+@v1_router.get("/people")
+def v1_list_people(
+    request: Request,
+    include_hidden: bool = False,
+    q: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    svc = getattr(_c(request), "faces", None)
+    if svc is None:
+        raise AppError("face_unavailable", "人脸服务尚未装配。")
+    return _rewrite_v1_locators(svc.list_people(include_hidden=include_hidden, q=q, limit=limit, offset=offset))

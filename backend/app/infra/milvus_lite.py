@@ -10,6 +10,9 @@ from app.domain.lifecycle import VectorDeleteResult, as_vector_locators, seriali
 from app.infra.milvus_rest import collection_name
 from app.infra.redact import redact
 
+_SHARED_CLIENT_LOCK = threading.RLock()
+_SHARED_CLIENTS: dict[Path, Any] = {}
+
 
 class MilvusLiteIndex:
     """Embedded Milvus Lite vector index backed by a local file (zero external Milvus container needed)."""
@@ -89,7 +92,13 @@ class MilvusLiteIndex:
                 raise DependencyError(msg) from exc
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
             try:
-                self._client = MilvusClient(str(self._db_path))
+                resolved = self._db_path.resolve()
+                with _SHARED_CLIENT_LOCK:
+                    shared = _SHARED_CLIENTS.get(resolved)
+                    if shared is None:
+                        shared = MilvusClient(str(self._db_path))
+                        _SHARED_CLIENTS[resolved] = shared
+                    self._client = shared
                 self._probe_error = None
             except Exception as exc:
                 self._probe_error = redact(str(exc))

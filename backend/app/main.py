@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.application.auth_service import AuthService
 from app.application.dashboard import DashboardService
+from app.application.face_service import FaceService
 from app.application.import_service import ImportService
 from app.application.job_service import JobService
 from app.application.lexical_search import LexicalSearchService
@@ -25,10 +26,12 @@ from app.application.source_service import SourceService
 from app.application.status_service import StatusService
 from app.application.subtitle_service import SubtitleService
 from app.domain.errors import AppError
+from app.domain.face import FACE_DIM
 from app.infra.cleaner import DefaultFrameCleaner
 from app.infra.auth import DefaultAuthorizationPolicy
 from app.infra.config import Settings
 from app.infra.db import connect, init_db
+from app.infra.face_insightface import FaceHttpRecognizer, InsightFaceLocalRecognizer
 from app.infra.file_store import PlatformResolvingFileStore, S3FileStore, UnconfiguredFileStore
 from app.infra.s3_reader import S3SourceReader
 from app.infra.sampler import FFmpegFrameSampler
@@ -115,6 +118,62 @@ def build_vector_index(settings: Settings, override=None):
         dim=settings.model_dim,
         preprocess_version=(space.preprocess_version if space else (settings.preprocess_version or "")),
         auto_create=auto_create,
+    )
+
+
+def build_face_recognizer(settings: Settings, enabled_getter, override=None):
+    if override is not None:
+        return override
+    backend = (settings.face_backend or "local_insightface").strip().lower()
+    http_url = (settings.face_http_base_url or "").strip()
+    if backend == "remote_http" or (http_url and backend != "local_insightface"):
+        return FaceHttpRecognizer(
+            http_url,
+            timeout=float(settings.face_http_timeout_seconds or 30.0),
+            enabled_getter=enabled_getter,
+        )
+    return InsightFaceLocalRecognizer(
+        model_name=settings.face_model or "buffalo_s",
+        cache_dir=_resolve_under_backend(settings.face_cache_dir),
+        det_threshold=float(settings.face_det_threshold or 0.55),
+        min_face_px=int(settings.face_min_size_px or 24),
+        enabled_getter=enabled_getter,
+    )
+
+
+def build_face_index(settings: Settings, override=None):
+    if override is not None:
+        return override
+    backend_kind = (settings.milvus_backend or "").strip().lower()
+    uri = (settings.milvus_uri or "").strip()
+    is_lite = backend_kind == "lite" or (
+        bool(uri) and not uri.startswith(("http://", "https://")) and uri.endswith(".db")
+    )
+    model_name = (settings.face_model or "buffalo_s").strip() or "buffalo_s"
+    if is_lite:
+        lite_raw = Path(uri) if (uri and not uri.startswith(("http://", "https://"))) else settings.milvus_lite_path
+        lite_path = _resolve_under_backend(lite_raw)
+        return MilvusLiteIndex(
+            lite_path,
+            profile=settings.vector_profile or "default",
+            model_id=f"face_{model_name}",
+            model_version="v1",
+            dim=FACE_DIM,
+            preprocess_version="arcface_512d_v1",
+            auto_create=True,
+        )
+    if not uri:
+        return UnconfiguredVectorIndex()
+    return MilvusRestIndex(
+        uri,
+        token=_milvus_token(settings),
+        db_name=settings.milvus_db,
+        profile=settings.vector_profile or "default",
+        model_id=f"face_{model_name}",
+        model_version="v1",
+        dim=FACE_DIM,
+        preprocess_version="arcface_512d_v1",
+        auto_create=True,
     )
 
 
@@ -301,6 +360,8 @@ def build_container(
     file_store=None,
     sampler=None,
     work_root: Path | None = None,
+    face_recognizer=None,
+    face_index=None,
 ) -> tuple[Container, JobDispatcher, object]:
     settings = settings or Settings()
     db_path = sqlite_path or _resolve_under_backend(settings.sqlite_path)
@@ -338,6 +399,10 @@ def build_container(
     imports = ImportService(metadata, tasks)
     tags = TagService(metadata)
     app_settings = SettingsService(metadata, settings, store)
+
+    face_rec = build_face_recognizer(settings, lambda: app_settings.get_face().enabled, face_recognizer)
+    face_vec = build_face_index(settings, face_index)
+    faces = FaceService(metadata, store, face_rec, face_index=face_vec, settings_getter=app_settings.get_face)
 
     def sample_settings():
         return app_settings.get_sample()
@@ -399,9 +464,10 @@ def build_container(
         dim=settings.model_dim,
         preprocess_version=(current_space.preprocess_version if current_space else (settings.preprocess_version or "")),
         space=current_space,
+        face_service=faces,
     )
     lifecycle = LifecycleService(
-        metadata, tasks, vec, settings_getter=app_settings.get_lifecycle, file_store=store
+        metadata, tasks, vec, settings_getter=app_settings.get_lifecycle, file_store=store, face_service=faces
     )
     rebuild = RebuildService(
         metadata,
@@ -444,6 +510,7 @@ def build_container(
         sample_interval=app_settings.get_sample().interval_seconds,
         subtitle_encoder=sub_enc,
         auth_service=auth,
+        face_service=faces,
     )
     container = Container(
         settings=settings,
@@ -465,6 +532,7 @@ def build_container(
         dashboard=dashboard,
         media=media,
         api_tokens=api_tokens,
+        faces=faces,
     )
     dispatcher = JobDispatcher(jobs, settings, work_root=work_dir)
     container_extras = {
@@ -488,6 +556,8 @@ def create_app(
     file_store=None,
     sampler=None,
     work_root: Path | None = None,
+    face_recognizer=None,
+    face_index=None,
 ) -> FastAPI:
     settings = settings or Settings()
     container, dispatcher, extras = build_container(
@@ -501,6 +571,8 @@ def create_app(
         file_store=file_store,
         sampler=sampler,
         work_root=work_root,
+        face_recognizer=face_recognizer,
+        face_index=face_index,
     )
 
     @asynccontextmanager
