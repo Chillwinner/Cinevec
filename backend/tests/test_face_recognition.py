@@ -362,3 +362,42 @@ def test_face_clustering_naming_tag_sync_multisearch_and_purge(tmp_path: Path):
         updated_a = client.get(f"/api/people/{person_a_id}").json()
         # Now 李四 remains on asset-ab and asset-b -> 2 assets
         assert updated_a["asset_count"] == 2
+
+
+def test_pure_onnx_recognizer_helpers_and_exif_crop(tmp_path: Path):
+    from app.infra.face_insightface import InsightFaceLocalRecognizer, align_face_112
+
+    rec = InsightFaceLocalRecognizer(model_name="buffalo_sc", cache_dir=tmp_path)
+    # In this venv onnxruntime and numpy are installed without needing insightface/cv2
+    assert rec._deps_installed() is True
+    assert rec.available() is True
+
+    # Identity 5-pt alignment preserves 112x112 size and portrait center
+    canvas = Image.new("RGB", (200, 200), (20, 30, 40))
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle((45, 45, 115, 115), fill=(220, 120, 80))
+    kps_shifted = [
+        (38.2946 + 20.0, 51.6963 + 20.0),
+        (73.5318 + 20.0, 51.5014 + 20.0),
+        (56.0252 + 20.0, 71.7366 + 20.0),
+        (41.5493 + 20.0, 92.3655 + 20.0),
+        (70.7299 + 20.0, 92.2041 + 20.0),
+    ]
+    aligned = align_face_112(canvas, kps_shifted)
+    assert aligned.size == (112, 112)
+    center_px = aligned.getpixel((56, 70))
+    assert center_px[0] > 180 and center_px[2] < 120
+
+    # EXIF orientation tag (6 = 90 CW raw -> transposed portrait) is honored by crop_face_jpeg
+    raw = Image.new("RGB", (200, 100), (10, 10, 10))
+    d2 = ImageDraw.Draw(raw)
+    # Drawn at (0..90, 0..90) in raw; after EXIF 6 (rotate 270 CW = right side in transposed 100x200)
+    d2.rectangle((0, 0, 90, 90), fill=(240, 40, 40))
+    exif = raw.getexif()
+    exif[274] = 6
+    buf = BytesIO()
+    raw.save(buf, format="JPEG", exif=exif.tobytes())
+    cropped_bytes = crop_face_jpeg(buf.getvalue(), [0.5, 0.0, 1.0, 0.5], size=64, margin=0.0)
+    cropped_img = Image.open(BytesIO(cropped_bytes)).convert("RGB")
+    px = cropped_img.getpixel((32, 32))
+    assert px[0] > 180 and px[1] < 90

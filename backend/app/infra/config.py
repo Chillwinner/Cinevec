@@ -80,11 +80,11 @@ class Settings(BaseSettings):
     # 可选人脸识别与人物聚类（默认关闭，0 额外常驻内存）
     face_enabled: bool = False
     face_backend: str = "local_insightface"
-    face_model: str = "buffalo_s"
+    face_model: str = "buffalo_sc"
     face_http_base_url: str = ""
     face_http_timeout_seconds: float = 30.0
     face_det_threshold: float = 0.55
-    face_cluster_threshold: float = 0.45
+    face_cluster_threshold: float = 0.40
     face_min_size_px: int = 24
     face_cache_dir: Path = Field(default=Path("data/models/insightface"))
 

@@ -22,7 +22,7 @@ import type { AppSettings, FaceSettings, SampleSettings, Source, SystemStatus } 
 
 const emptyFace: FaceSettings = {
   enabled: false,
-  cluster_threshold: 0.45,
+  cluster_threshold: 0.40,
   det_threshold: 0.55,
   min_face_px: 24,
   sync_person_tags: true,
@@ -645,13 +645,13 @@ export default function SettingsPage() {
                 step={0.01}
                 min={0.2}
                 max={0.85}
-                value={settings.face?.cluster_threshold ?? 0.45}
+                value={settings.face?.cluster_threshold ?? 0.40}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
                     face: {
                       ...(settings.face ?? emptyFace),
-                      cluster_threshold: Number(e.target.value) || 0.45,
+                      cluster_threshold: Number(e.target.value) || 0.40,
                     },
                   })
                 }

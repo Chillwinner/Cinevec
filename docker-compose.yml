@@ -126,8 +126,8 @@ services:
       # 可选人脸识别与人物聚类（默认关闭，按需开启）
       PICA_FACE_ENABLED: ${PICA_FACE_ENABLED:-false}
       PICA_FACE_BACKEND: ${PICA_FACE_BACKEND:-local_insightface}
-      PICA_FACE_MODEL: ${PICA_FACE_MODEL:-buffalo_s}
-      PICA_FACE_CLUSTER_THRESHOLD: ${PICA_FACE_CLUSTER_THRESHOLD:-0.45}
+      PICA_FACE_MODEL: ${PICA_FACE_MODEL:-buffalo_sc}
+      PICA_FACE_CLUSTER_THRESHOLD: ${PICA_FACE_CLUSTER_THRESHOLD:-0.40}
       PICA_FACE_HTTP_BASE_URL: ${PICA_FACE_HTTP_BASE_URL:-}
       PICA_FACE_CACHE_DIR: ${PICA_FACE_CACHE_DIR:-data/models/insightface}
     ports:

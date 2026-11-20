@@ -146,7 +146,7 @@ class FaceService:
             return {"skipped": False, "faces_indexed": 0, "people_touched": 0}
 
         people_cache = self._load_people_centroids()
-        threshold = float(settings.cluster_threshold or 0.45)
+        threshold = float(settings.cluster_threshold or 0.40)
         use_index = self._index is not None and self._index.available()
         collection = ""
         if use_index and hasattr(self._index, "name_for"):
@@ -528,7 +528,7 @@ class FaceService:
         raise NotFoundError("人脸头像文件不可用")
 
     def recluster_faces(self, threshold: float | None = None) -> dict[str, Any]:
-        th = float(threshold if threshold is not None else self.get_settings().cluster_threshold or 0.45)
+        th = float(threshold if threshold is not None else self.get_settings().cluster_threshold or 0.40)
         all_people = self._metadata.list_people(include_hidden=True, limit=10000, offset=0)
         locked_ids = {p["id"] for p in all_people if p.get("locked") or p.get("hidden") or (p.get("name") or "").strip()}
         anchors: list[tuple[dict[str, Any], list[float]]] = []
@@ -692,7 +692,7 @@ class FaceService:
         effective_threshold = (
             float(score_threshold)
             if score_threshold is not None
-            else max(0.25, float(settings.cluster_threshold or 0.45) - 0.10)
+            else max(0.25, float(settings.cluster_threshold or 0.40) - 0.10)
         )
         best_by_asset: dict[str, dict[str, Any]] = {}
         people_cache: dict[str, dict[str, Any] | None] = {}
@@ -790,7 +790,7 @@ class FaceService:
                     "matched_face_id": face_row["id"],
                     "matched_bbox": face_row.get("bbox"),
                     "matched_face_crop_locator": f"/api/faces/{face_row['id']}/crop",
-                    "model_id": (self._recognizer.public_status() or {}).get("model") or "buffalo_s",
+                    "model_id": (self._recognizer.public_status() or {}).get("model") or "buffalo_sc",
                     "dim": FACE_DIM,
                 }
             )

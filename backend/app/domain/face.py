@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Iterable, Sequence
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 FACE_DIM = 512
 
@@ -24,7 +24,7 @@ class DetectedFace:
 @dataclass
 class FaceSettings:
     enabled: bool = False
-    cluster_threshold: float = 0.45
+    cluster_threshold: float = 0.40
     det_threshold: float = 0.55
     min_face_px: int = 24
     sync_person_tags: bool = True
@@ -93,7 +93,7 @@ def decode_vector_blob(blob: bytes | memoryview | None) -> list[float]:
 def crop_face_jpeg(image_bytes: bytes, bbox: Sequence[float], *, size: int = 160, margin: float = 0.22) -> bytes:
     """Crop normalized [x1, y1, x2, y2] bbox into a centered square face thumbnail JPEG."""
     with Image.open(BytesIO(image_bytes)) as img:
-        rgb = img.convert("RGB")
+        rgb = ImageOps.exif_transpose(img).convert("RGB")
         w, h = rgb.size
         if len(bbox) >= 4 and w > 0 and h > 0:
             x1, y1, x2, y2 = [float(v) for v in bbox[:4]]

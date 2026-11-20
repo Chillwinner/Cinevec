@@ -133,7 +133,7 @@ def build_face_recognizer(settings: Settings, enabled_getter, override=None):
             enabled_getter=enabled_getter,
         )
     return InsightFaceLocalRecognizer(
-        model_name=settings.face_model or "buffalo_s",
+        model_name=settings.face_model or "buffalo_sc",
         cache_dir=_resolve_under_backend(settings.face_cache_dir),
         det_threshold=float(settings.face_det_threshold or 0.55),
         min_face_px=int(settings.face_min_size_px or 24),
@@ -149,7 +149,7 @@ def build_face_index(settings: Settings, override=None):
     is_lite = backend_kind == "lite" or (
         bool(uri) and not uri.startswith(("http://", "https://")) and uri.endswith(".db")
     )
-    model_name = (settings.face_model or "buffalo_s").strip() or "buffalo_s"
+    model_name = (settings.face_model or "buffalo_sc").strip() or "buffalo_sc"
     if is_lite:
         lite_raw = Path(uri) if (uri and not uri.startswith(("http://", "https://"))) else settings.milvus_lite_path
         lite_path = _resolve_under_backend(lite_raw)
