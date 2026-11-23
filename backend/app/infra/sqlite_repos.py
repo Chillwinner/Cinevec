@@ -1879,7 +1879,7 @@ class SqliteTaskRepository:
                     f" AND NOT (job_type IN ('index_asset', 'index_subtitles') AND COALESCE(stage, '') IN ({marks}))"
                 )
                 params.extend(EMBED_LANE_STAGES)
-                order_by = "ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 ELSE 1 END ASC, created_at ASC"
+                order_by = "ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 WHEN job_type = 'index_faces' THEN 2 ELSE 1 END ASC, created_at ASC"
             elif lane == "embed":
                 lane_clause = (
                     " AND (job_type = 'reindex_profile'"
@@ -1889,7 +1889,7 @@ class SqliteTaskRepository:
                 order_by = "ORDER BY created_at ASC"
             else:
                 lane_clause = ""
-                order_by = "ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 ELSE 1 END ASC, created_at ASC"
+                order_by = "ORDER BY CASE WHEN job_type = 'vector_purge' THEN 0 WHEN job_type = 'index_faces' THEN 2 ELSE 1 END ASC, created_at ASC"
             row = self._conn.execute(
                 f"""
                 SELECT * FROM jobs

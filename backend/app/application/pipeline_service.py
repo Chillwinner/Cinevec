@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +45,9 @@ class PipelineService:
         self._reader = reader
         self._store = file_store
         self._sampler = sampler
+        self._preview_pool = ThreadPoolExecutor(max_workers=4)
+        self._preview_futures: dict[str, list[Future]] = {}
+        self._preview_lock = threading.Lock()
         self._cleaner = cleaner
         self._settings_getter = settings_getter
         self._work_root = work_root
@@ -260,7 +265,8 @@ class PipelineService:
         image = inspected["image"]
         settings = self._sample_settings()
         preview_key = f"previews/{asset.id}/frame_{point.index:06d}.jpg"
-        self._store.put_bytes(preview_key, render_preview(image, settings), "image/jpeg")
+        preview_bytes = render_preview(image, settings)
+        self._submit_preview_upload(job.id, preview_key, preview_bytes)
         if not ck.get("auto_cover_key"):
             ck["auto_cover_key"] = preview_key
         encode_path = self._stage_video_encode(job, ck, point.index, png, image, settings)
@@ -291,7 +297,10 @@ class PipelineService:
             progress=_progress(idx + 1, len(plan)),
             checkpoint=ck,
         )
-        return "paused" if saved == "paused" else "continue"
+        if saved == "paused":
+            self._flush_preview_uploads(job.id)
+            return "paused"
+        return "continue"
 
     def _ensure_local(self, job: Job, asset, ck: dict[str, Any]):
         existing = ck.get("work_path")
@@ -381,7 +390,19 @@ class PipelineService:
             return [float(x) for x in sig]
         return None
 
+    def _submit_preview_upload(self, job_id: str, key: str, data: bytes) -> None:
+        future = self._preview_pool.submit(self._store.put_bytes, key, data, "image/jpeg")
+        with self._preview_lock:
+            self._preview_futures.setdefault(job_id, []).append(future)
+
+    def _flush_preview_uploads(self, job_id: str) -> None:
+        with self._preview_lock:
+            futures = self._preview_futures.pop(job_id, [])
+        for future in futures:
+            future.result()
+
     def _finish_media(self, job_id: str, asset_id: str, ck: dict[str, Any], note: str) -> Job | str:
+        self._flush_preview_uploads(job_id)
         ck["media_done"] = True
         if hasattr(self._metadata, "update_asset"):
             asset = self._metadata.get_asset(asset_id)

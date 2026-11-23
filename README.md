@@ -287,6 +287,11 @@ cd web && npm run build && npm test
 
 ## Changelog
 
+### v1.1 (`2026-11-23`)
+- **Performance**: Replaced per-frame encode-and-upsert loops with micro-batched visual indexing (`batch_size=32`, 4-way concurrent image encoding, batched Milvus upserts) in `backend/app/application/index_write_service.py`, eliminating dashboard stage oscillation and reducing remote write round-trips.
+- **Performance**: Decoupled face recognition from visual indexing into a low-priority background `index_faces` job (`backend/app/application/job_service.py`, `backend/app/infra/sqlite_repos.py`), added uniform video frame sampling (`max_video_frames=16`), and parallelized face crop uploads (`backend/app/application/face_service.py`).
+- **Performance**: Parallelized 720p video preview uploads using a 4-worker thread pool with completion flushing in `backend/app/application/pipeline_service.py`.
+
 ### v1.0 (`2026-11-20`)
 - **Fixed**: Unified search result ranking across images and videos by relevance score descending (`backend/app/application/search_aggregate.py` & `web/src/pages/SearchPage.tsx`), resolving the issue where high-scoring videos appeared after lower-scoring images.
 - **Performance**: Added Milvus REST v2 collection-verification caching (`backend/app/infra/milvus_rest.py`) and concurrent visual + subtitle recall (`backend/app/application/search_service.py`), reducing remote Milvus search latency by ~50%.

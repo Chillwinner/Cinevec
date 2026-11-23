@@ -28,6 +28,7 @@ class JobService:
         subtitle_encoder=None,
         index_writer=None,
         rebuild_service=None,
+        face_service=None,
     ) -> None:
         self._tasks = tasks
         self._encoder = encoder
@@ -41,6 +42,7 @@ class JobService:
         self._subtitle_encoder = subtitle_encoder
         self._writer = index_writer
         self._rebuild = rebuild_service
+        self._face_service = face_service
 
     def list_jobs(self, status: JobStatus | None = None) -> list[Job]:
         return self._tasks.list_jobs(status)
@@ -165,6 +167,11 @@ class JobService:
             if outcome == "completed":
                 return self._mark_completed(job.id)
             return self.get(job.id)
+        if job.job_type == "index_faces":
+            if self._face_service is not None and self._face_service.is_enabled() and job.asset_id:
+                self._tasks.update_job(job.id, stage="face_indexing", step="后台人脸识别中", progress=0.5)
+                self._face_service.index_asset_faces(job.asset_id)
+            return self._mark_completed(job.id)
         if lane == "embed":
             return self._run_embed_lane(job.id)
         pipeline = self._subtitles if job.job_type == "index_subtitles" else self._pipeline

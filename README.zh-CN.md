@@ -285,6 +285,11 @@ cd web && npm run build && npm test
 
 ## 更新日志
 
+### v1.1（`2026-11-23`）
+- **优化**：将逐帧“编码-写库”循环重构为微批流水线（`batch_size=32`、图像 4 并发编码、批量写入 Milvus，见 [`backend/app/application/index_write_service.py`](backend/app/application/index_write_service.py)），大幅减少跨网往返并消除看板阶段在「向量编码」与「写入索引」之间的来回跳动。
+- **优化**：将人脸识别从主视觉索引流程解耦为低优先级后台 `index_faces` 任务（[`backend/app/application/job_service.py`](backend/app/application/job_service.py)、[`backend/app/infra/sqlite_repos.py`](backend/app/infra/sqlite_repos.py)），为长视频增加均匀抽帧上限（`max_video_frames=16`）并改为 6 并发上传人脸裁剪图（[`backend/app/application/face_service.py`](backend/app/application/face_service.py)）。
+- **优化**：视频预处理阶段的 720p 预览图改为 4 并发线程池异步上传并在收尾前统一等待落库（[`backend/app/application/pipeline_service.py`](backend/app/application/pipeline_service.py)）。
+
 ### v1.0（`2026-11-20`）
 - **修复**：统一图片与视频检索结果的排序逻辑（[`backend/app/application/search_aggregate.py`](backend/app/application/search_aggregate.py) 与 [`web/src/pages/SearchPage.tsx`](web/src/pages/SearchPage.tsx)），解决高相关度视频被排在低相关度图片之后的问题。
 - **优化**：为 Milvus REST v2 增加集合校验缓存（[`backend/app/infra/milvus_rest.py`](backend/app/infra/milvus_rest.py)）并并发执行画面路与字幕路召回（[`backend/app/application/search_service.py`](backend/app/application/search_service.py)），跨网检索延迟降低约 50%。

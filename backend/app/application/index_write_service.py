@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from app.domain.errors import AppError, NotConfiguredError
 from app.domain.lifecycle import VectorLocator
 from app.domain.models import Job
 from app.domain.ports import FileStore, ImageTextEncoder, MetadataRepository, SubtitleEncoder, TaskRepository, VectorIndex
-from pathlib import Path
 
 from app.infra.encode_local import cleanup_encode_work, local_path_for
 from app.infra.milvus_rest import collection_name
@@ -89,6 +92,7 @@ class IndexWriteService:
         self._preprocess_version = preprocess_version or ""
         self._space = space
         self._face_service = face_service
+        self._timing_lock = threading.Lock()
 
     def process_frames(self, job: Job) -> str:
         asset_id = job.asset_id
@@ -125,11 +129,36 @@ class IndexWriteService:
         if outcome == "completed" and self._face_service is not None:
             try:
                 if self._face_service.is_enabled():
-                    self._face_service.index_asset_faces(asset.id)
+                    self._enqueue_face_index(asset)
             except Exception:
                 # Face recognition is opt-in enrichment and never blocks primary visual indexing.
                 pass
         return outcome
+
+    def _enqueue_face_index(self, asset) -> None:
+        """Queue an asynchronous face indexing job so visual indexing finishes immediately."""
+        finder = getattr(self._tasks, "find_active_jobs", None)
+        if callable(finder) and finder("index_faces", asset_id=asset.id):
+            return
+        creator = getattr(self._tasks, "create_job", None)
+        if not callable(creator):
+            return
+        creator(
+            Job(
+                id=str(uuid.uuid4()),
+                job_type="index_faces",
+                status="waiting",
+                source_id=getattr(asset, "source_id", None),
+                asset_id=asset.id,
+                stage="queued",
+                step="等待后台人脸识别",
+                progress=0.0,
+                queue_position=None,
+                error_code=None,
+                error_message=None,
+                payload={"asset_id": asset.id},
+            )
+        )
 
     def process_subtitles(self, job: Job, units: list[dict[str, Any]]) -> str:
         encoder = self._sub_encoder
@@ -172,6 +201,7 @@ class IndexWriteService:
                 collection = str(name_fn(modality) or "")
         total = len(units)
         find_existing = getattr(self._metadata, "find_vector_unit_in_space", None)
+        pending: list[dict[str, Any]] = []
         for unit in units:
             unit_index = int(unit["unit_index"])
             vid = vector_ref(
@@ -206,68 +236,99 @@ class IndexWriteService:
             )
             if vid in done:
                 continue
-            self._checkpoint(job.id, checkpoint, embed, stage="encoding", current=vid)
+            pending.append({"unit": unit, "unit_index": unit_index, "vid": vid, "remote_id": remote_id})
+
+        batch_size = 32
+        for start_idx in range(0, len(pending), batch_size):
+            batch = pending[start_idx : start_idx + batch_size]
+            first_vid = batch[0]["vid"]
+            self._checkpoint(job.id, checkpoint, embed, stage="encoding", current=first_vid)
             timing_start(checkpoint, "encode")
-            if encode_image:
-                timing_start(checkpoint, "encode_fetch")
-                data, source = self._load_encode_bytes(asset, unit)
-                timing_end(checkpoint, "encode_fetch")
-                timing_note(checkpoint, "encode_fetch", **image_bytes_info(data), source=source)
-                timing_start(checkpoint, "encode_http")
-                vector = encoder.encode_image(data)
-                timing_end(checkpoint, "encode_http")
-                last = getattr(encoder, "last_embed_meta", None)
-                meta = last() if callable(last) else None
-                if meta:
-                    timing_note(checkpoint, "encode_remote", **meta)
+            if encode_image and len(batch) > 1:
+                with ThreadPoolExecutor(max_workers=min(4, len(batch))) as pool:
+                    encoded_items = list(
+                        pool.map(
+                            lambda item: self._encode_unit_item(asset, item, encoder, encode_image, checkpoint),
+                            batch,
+                        )
+                    )
             else:
-                encode_task = getattr(encoder, "encode_text_for_task", None)
-                if callable(encode_task):
-                    vector = encode_task(unit.get("text") or "", role="document")
-                else:
-                    vector = encoder.encode_text(unit.get("text") or "")
+                encoded_items = [
+                    self._encode_unit_item(asset, item, encoder, encode_image, checkpoint) for item in batch
+                ]
             timing_end(checkpoint, "encode")
-            record = {
-                "id": remote_id,
-                "vector": vector,
-                "asset_id": asset.id,
-                "version": version,
-                "unit_index": unit_index,
-                "time_seconds": unit.get("time_seconds") or 0,
-                "preview_key": unit.get("preview_key") or "",
-            }
-            self._checkpoint(job.id, checkpoint, embed, stage="writing", current=vid, remote_id=remote_id)
-            timing_start(checkpoint, "index_write")
-            self._index.upsert_records(modality, [record])
-            timing_end(checkpoint, "index_write")
-            written.add(remote_id)
-            embed["written_ids"] = sorted(written)
-            self._checkpoint(job.id, checkpoint, embed, stage="associating", current=vid, remote_id=remote_id)
-            timing_start(checkpoint, "associate")
-            self._metadata.upsert_vector_unit(
+
+            records = [
                 {
-                    "vector_id": vid,
+                    "id": item["remote_id"],
+                    "vector": vec,
                     "asset_id": asset.id,
                     "version": version,
-                    "modality": modality,
-                    "unit_index": unit_index,
-                    "time_seconds": unit.get("time_seconds"),
-                    "preview_key": unit.get("preview_key"),
-                    "collection": collection,
-                    "status": "associated",
-                    "profile": self._profile,
-                    "model_id": self._model_id,
-                    "model_version": self._model_version,
-                    "dim": int(self._dim) if self._dim else None,
-                    "preprocess_version": self._preprocess_version or "",
-                    "remote_vector_id": remote_id,
+                    "unit_index": item["unit_index"],
+                    "time_seconds": item["unit"].get("time_seconds") or 0,
+                    "preview_key": item["unit"].get("preview_key") or "",
                 }
+                for item, vec in encoded_items
+            ]
+            last_item = batch[-1]
+            self._checkpoint(
+                job.id,
+                checkpoint,
+                embed,
+                stage="writing",
+                current=last_item["vid"],
+                remote_id=last_item["remote_id"],
             )
+            timing_start(checkpoint, "index_write")
+            self._index.upsert_records(modality, records)
+            timing_end(checkpoint, "index_write")
+            for item in batch:
+                written.add(item["remote_id"])
+            embed["written_ids"] = sorted(written)
+
+            self._checkpoint(
+                job.id,
+                checkpoint,
+                embed,
+                stage="associating",
+                current=last_item["vid"],
+                remote_id=last_item["remote_id"],
+            )
+            timing_start(checkpoint, "associate")
+            for item, _ in encoded_items:
+                unit = item["unit"]
+                self._metadata.upsert_vector_unit(
+                    {
+                        "vector_id": item["vid"],
+                        "asset_id": asset.id,
+                        "version": version,
+                        "modality": modality,
+                        "unit_index": item["unit_index"],
+                        "time_seconds": unit.get("time_seconds"),
+                        "preview_key": unit.get("preview_key"),
+                        "collection": collection,
+                        "status": "associated",
+                        "profile": self._profile,
+                        "model_id": self._model_id,
+                        "model_version": self._model_version,
+                        "dim": int(self._dim) if self._dim else None,
+                        "preprocess_version": self._preprocess_version or "",
+                        "remote_vector_id": item["remote_id"],
+                    }
+                )
+                done.add(item["vid"])
             timing_end(checkpoint, "associate")
-            done.add(vid)
             embed["associated_ids"] = sorted(done)
             embed["written_ids"] = sorted(written)
-            self._checkpoint(job.id, checkpoint, embed, stage="associated", current=vid, associated=len(done), total=total)
+            self._checkpoint(
+                job.id,
+                checkpoint,
+                embed,
+                stage="associated",
+                current=last_item["vid"],
+                associated=len(done),
+                total=total,
+            )
 
         if total == 0 or len(done) < total:
             if total == 0:
@@ -280,6 +341,38 @@ class IndexWriteService:
         self._checkpoint(job.id, checkpoint, embed, stage="activated", associated=len(done), total=total)
         cleanup_encode_work(checkpoint)
         return "completed"
+
+    def _encode_unit_item(
+        self,
+        asset,
+        item: dict[str, Any],
+        encoder,
+        encode_image: bool,
+        checkpoint: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[float]]:
+        unit = item["unit"]
+        if encode_image:
+            with self._timing_lock:
+                timing_start(checkpoint, "encode_fetch")
+            data, source = self._load_encode_bytes(asset, unit)
+            with self._timing_lock:
+                timing_end(checkpoint, "encode_fetch")
+                timing_note(checkpoint, "encode_fetch", **image_bytes_info(data), source=source)
+                timing_start(checkpoint, "encode_http")
+            vector = encoder.encode_image(data)
+            with self._timing_lock:
+                timing_end(checkpoint, "encode_http")
+                last = getattr(encoder, "last_embed_meta", None)
+                meta = last() if callable(last) else None
+                if meta:
+                    timing_note(checkpoint, "encode_remote", **meta)
+        else:
+            encode_task = getattr(encoder, "encode_text_for_task", None)
+            if callable(encode_task):
+                vector = encode_task(unit.get("text") or "", role="document")
+            else:
+                vector = encoder.encode_text(unit.get("text") or "")
+        return item, vector
 
     def _load_encode_bytes(self, asset, unit: dict[str, Any]) -> tuple[bytes, str]:
         local = unit.get("local_path")

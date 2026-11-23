@@ -495,6 +495,7 @@ def build_container(
         subtitle_encoder=sub_enc,
         index_writer=writer,
         rebuild_service=rebuild,
+        face_service=faces,
     )
     search = SearchService(enc, vec, jobs, metadata, store, app_settings.get_search, sub_enc, current_space=current_space)
     lexical = LexicalSearchService(metadata, lifecycle)

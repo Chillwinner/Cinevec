@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -174,6 +175,8 @@ class FaceService:
         self,
         asset_id: str,
         frame_inputs: list[tuple[int, float, bytes]] | None = None,
+        *,
+        max_video_frames: int = 16,
     ) -> dict[str, Any]:
         settings = self.get_settings()
         if not settings.enabled or self._recognizer is None or not self._recognizer.available():
@@ -188,6 +191,10 @@ class FaceService:
         frames_to_scan: list[tuple[int, float, bytes]] = list(frame_inputs or [])
         if not frames_to_scan:
             kept_frames = [f for f in self._metadata.list_frames(asset_id) if f.get("kept")]
+            if max_video_frames > 0 and len(kept_frames) > max_video_frames:
+                step = (len(kept_frames) - 1) / float(max_video_frames - 1)
+                selected_indices = sorted({int(round(i * step)) for i in range(max_video_frames)})
+                kept_frames = [kept_frames[i] for i in selected_indices]
             for frame in kept_frames:
                 idx = int(frame.get("index") if frame.get("index") is not None else frame.get("frame_index") or 0)
                 ts = float(frame.get("time_seconds") or 0.0)
@@ -201,6 +208,7 @@ class FaceService:
         people_cache = self._load_people_centroids()
         threshold = float(settings.cluster_threshold or 0.40)
         use_index = self._index is not None and self._index.available()
+        store_available = self._store is not None and self._store.available()
         collection = ""
         if use_index and hasattr(self._index, "name_for"):
             try:
@@ -208,68 +216,107 @@ class FaceService:
             except Exception:
                 collection = ""
 
-        inserted = 0
-        touched_people: set[str] = set()
-        vector_records: list[dict[str, Any]] = []
-
+        pending_faces: list[dict[str, Any]] = []
         for frame_index, time_seconds, image_bytes in frames_to_scan:
             detected = self._recognizer.detect_and_encode(image_bytes)
             for face_ord, det in enumerate(detected):
                 face_id = str(uuid.uuid4())
                 crop_key: str | None = None
-                if self._store is not None and self._store.available():
+                crop_bytes: bytes | None = None
+                if store_available:
                     try:
                         crop_bytes = det.crop_jpeg or crop_face_jpeg(image_bytes, det.bbox, size=160)
                         crop_key = f"faces/{asset_id}/{face_id}.jpg"
-                        self._store.put_bytes(crop_key, crop_bytes, "image/jpeg")
                     except Exception:
                         crop_key = None
-
-                unit_vec = l2_normalize(det.embedding)
-                matched_person = self._match_existing_person(unit_vec, people_cache, threshold)
-                if matched_person is None:
-                    matched_person = self._metadata.create_person(
-                        name=None,
-                        cover_face_id=face_id,
-                        centroid_blob=encode_vector_blob(unit_vec),
-                        face_count=1,
-                        hidden=False,
-                        locked=False,
-                    )
-                    people_cache.append((matched_person, unit_vec))
-                person_id = str(matched_person["id"])
-                touched_people.add(person_id)
-
-                remote_id = face_id if use_index else ""
-                unit_index = int(frame_index) * 100 + face_ord
-                self._metadata.insert_face(
+                        crop_bytes = None
+                pending_faces.append(
                     {
-                        "id": face_id,
-                        "asset_id": asset_id,
+                        "face_id": face_id,
                         "frame_index": int(frame_index),
                         "time_seconds": float(time_seconds),
-                        "bbox": list(det.bbox),
-                        "det_score": float(det.det_score),
+                        "face_ord": face_ord,
+                        "det": det,
                         "crop_key": crop_key,
-                        "embedding_blob": encode_vector_blob(unit_vec),
-                        "person_id": person_id,
-                        "collection": collection if use_index else "",
-                        "remote_vector_id": remote_id,
+                        "crop_bytes": crop_bytes,
                     }
                 )
-                if use_index:
-                    vector_records.append(
-                        {
-                            "id": remote_id,
-                            "vector": unit_vec,
-                            "asset_id": asset_id,
-                            "version": int(getattr(asset, "version", 1) or 1),
-                            "unit_index": unit_index,
-                            "time_seconds": float(time_seconds),
-                            "preview_key": crop_key or "",
-                        }
-                    )
-                inserted += 1
+
+        if store_available:
+            to_upload = [f for f in pending_faces if f["crop_key"] and f["crop_bytes"]]
+            if len(to_upload) > 1:
+                def _upload_crop(item: dict[str, Any]) -> None:
+                    try:
+                        self._store.put_bytes(item["crop_key"], item["crop_bytes"], "image/jpeg")
+                    except Exception:
+                        item["crop_key"] = None
+
+                with ThreadPoolExecutor(max_workers=min(6, len(to_upload))) as pool:
+                    list(pool.map(_upload_crop, to_upload))
+            elif len(to_upload) == 1:
+                item = to_upload[0]
+                try:
+                    self._store.put_bytes(item["crop_key"], item["crop_bytes"], "image/jpeg")
+                except Exception:
+                    item["crop_key"] = None
+
+        inserted = 0
+        touched_people: set[str] = set()
+        vector_records: list[dict[str, Any]] = []
+
+        for item in pending_faces:
+            face_id = item["face_id"]
+            det = item["det"]
+            crop_key = item["crop_key"]
+            frame_index = item["frame_index"]
+            time_seconds = item["time_seconds"]
+            face_ord = item["face_ord"]
+
+            unit_vec = l2_normalize(det.embedding)
+            matched_person = self._match_existing_person(unit_vec, people_cache, threshold)
+            if matched_person is None:
+                matched_person = self._metadata.create_person(
+                    name=None,
+                    cover_face_id=face_id,
+                    centroid_blob=encode_vector_blob(unit_vec),
+                    face_count=1,
+                    hidden=False,
+                    locked=False,
+                )
+                people_cache.append((matched_person, unit_vec))
+            person_id = str(matched_person["id"])
+            touched_people.add(person_id)
+
+            remote_id = face_id if use_index else ""
+            unit_index = int(frame_index) * 100 + face_ord
+            self._metadata.insert_face(
+                {
+                    "id": face_id,
+                    "asset_id": asset_id,
+                    "frame_index": int(frame_index),
+                    "time_seconds": float(time_seconds),
+                    "bbox": list(det.bbox),
+                    "det_score": float(det.det_score),
+                    "crop_key": crop_key,
+                    "embedding_blob": encode_vector_blob(unit_vec),
+                    "person_id": person_id,
+                    "collection": collection if use_index else "",
+                    "remote_vector_id": remote_id,
+                }
+            )
+            if use_index:
+                vector_records.append(
+                    {
+                        "id": remote_id,
+                        "vector": unit_vec,
+                        "asset_id": asset_id,
+                        "version": int(getattr(asset, "version", 1) or 1),
+                        "unit_index": unit_index,
+                        "time_seconds": float(time_seconds),
+                        "preview_key": crop_key or "",
+                    }
+                )
+            inserted += 1
 
         if use_index and vector_records:
             self._index.upsert_records("face", vector_records)
